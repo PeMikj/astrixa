@@ -64,6 +64,7 @@ Observed successful checks include:
 - MLflow records gateway runs with provider and agent-context tags
 - automated provider ejection scenario is executable via `tests/resilience/run_provider_ejection.py`
 - mixed load plus timed provider ejection is executable via `tests/resilience/run_mixed_load_resilience.py`
+- aggregate suite is executable via `tests/run_submission_suite.py` and writes JSON/Markdown artifacts to `tests/artifacts/`
 
 ## Benchmark Snapshot
 

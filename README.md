@@ -194,6 +194,7 @@ The product scope, architecture decisions, phased implementation, and success cr
 - submission checklist: [docs/submission-checklist.md](/home/p/astrixa/docs/submission-checklist.md)
 - requirements coverage matrix: [docs/requirements-status.md](/home/p/astrixa/docs/requirements-status.md)
 - automated resilience scenarios: [tests/resilience/provider-ejection-checklist.md](/home/p/astrixa/tests/resilience/provider-ejection-checklist.md)
+- aggregate submission suite: [tests/run_submission_suite.py](/home/p/astrixa/tests/run_submission_suite.py)
 
 ## Immediate Next Steps
 
