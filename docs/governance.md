@@ -103,6 +103,8 @@ Governance rule:
 - local NER models may enrich masking for names, organizations, and locations
 - raw-to-token mappings must stay request-scoped unless a stricter retention policy explicitly allows otherwise
 - telemetry must record anonymization counts and policy version, not raw sensitive values
+- policy profiles may change restoration behavior, for example `strict` may keep sensitive entities redacted on the response path
+- agent-scoped policy profiles should propagate automatically through auth and gateway layers
 
 ## Data Governance
 

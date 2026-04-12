@@ -66,6 +66,9 @@ Observed successful checks include:
 - response guardrails now run through `guardrails-engine`, not only gateway-local sanitization
 - anonymized `mock-1` request returned `X-Astrixa-Anonymization-Applied: true`
 - regex + spaCy anonymization path restored `Satya Nadella`, `Paris`, `Microsoft`, and `satya@example.com` after provider response
+- `strict` policy profile preserved semantic entities but returned `[REDACTED_EMAIL]` instead of restoring email
+- `off` policy profile bypassed anonymization and guardrail profile enforcement cleanly
+- agent-scoped `policy_profile` inheritance was verified with `persistence-agent` and applied without a manual policy header
 - synthetic routing error feedback moves provider to `degraded`
 - synthetic routing success feedback restores provider to `healthy`
 - active health probes can restore an ejected mock provider back to `healthy`

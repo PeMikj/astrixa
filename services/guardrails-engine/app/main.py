@@ -91,6 +91,11 @@ SECRET_LEAK_PATTERNS = [
     re.compile(r"api[_-]?key\s*[:=]\s*\S+", re.IGNORECASE),
 ]
 
+STRICT_ONLY_PATTERNS = [
+    re.compile(r"password\s*[:=]\s*\S+", re.IGNORECASE),
+    re.compile(r"private[_ -]?key", re.IGNORECASE),
+]
+
 UNSAFE_RESPONSE_FIELDS = {"reasoning", "reasoning_details"}
 
 
@@ -126,6 +131,17 @@ async def metrics():
 
 @app.post("/v1/guardrails/check", response_model=GuardrailVerdict)
 async def check_guardrails(payload: GuardrailRequest):
+    policy_profile = str(payload.metadata.get("policy_profile") or "balanced").lower()
+    if policy_profile == "off":
+        verdict = GuardrailVerdict(
+            decision="allow",
+            reason_code="policy_off",
+            reasons=[],
+            policy_version="guardrails.v1.off",
+        )
+        VERDICT_COUNT.labels(decision=verdict.decision, reason_code=verdict.reason_code).inc()
+        return verdict
+
     combined_text = "\n".join(message.content for message in payload.messages)
     reasons: list[str] = []
 
@@ -139,17 +155,25 @@ async def check_guardrails(payload: GuardrailRequest):
             reasons.append("secret_pattern_detected")
             break
 
+    if policy_profile == "strict":
+        for pattern in STRICT_ONLY_PATTERNS:
+            if pattern.search(combined_text):
+                reasons.append("strict_secret_pattern_detected")
+                break
+
     if reasons:
         verdict = GuardrailVerdict(
             decision="block",
             reason_code=reasons[0],
             reasons=reasons,
+            policy_version=f"guardrails.v1.{policy_profile}",
         )
     else:
         verdict = GuardrailVerdict(
             decision="allow",
             reason_code="ok",
             reasons=[],
+            policy_version=f"guardrails.v1.{policy_profile}",
         )
 
     VERDICT_COUNT.labels(decision=verdict.decision, reason_code=verdict.reason_code).inc()
@@ -189,6 +213,18 @@ def _contains_blockable_secret(value: Any) -> bool:
 
 @app.post("/v1/guardrails/check-response", response_model=ResponseGuardrailVerdict)
 async def check_response_guardrails(payload: ResponseGuardrailRequest):
+    policy_profile = str(payload.metadata.get("policy_profile") or "balanced").lower()
+    if policy_profile == "off":
+        verdict = ResponseGuardrailVerdict(
+            decision="allow",
+            reason_code="policy_off",
+            reasons=[],
+            policy_version="guardrails.v2.response.off",
+            sanitized_body=payload.body,
+        )
+        VERDICT_COUNT.labels(decision=verdict.decision, reason_code=verdict.reason_code).inc()
+        return verdict
+
     reasons: list[str] = []
     sanitized_body = _sanitize_response_value(payload.body, reasons)
 
@@ -197,6 +233,7 @@ async def check_response_guardrails(payload: ResponseGuardrailRequest):
             decision="sanitize",
             reason_code=reasons[0] if reasons else "response_sanitized",
             reasons=sorted(set(reasons)),
+            policy_version=f"guardrails.v2.response.{policy_profile}",
             sanitized_body=sanitized_body,
         )
     elif _contains_blockable_secret(payload.body):
@@ -204,6 +241,7 @@ async def check_response_guardrails(payload: ResponseGuardrailRequest):
             decision="block",
             reason_code="response_secret_detected",
             reasons=["response_secret_detected"],
+            policy_version=f"guardrails.v2.response.{policy_profile}",
             sanitized_body=None,
         )
     else:
@@ -211,6 +249,7 @@ async def check_response_guardrails(payload: ResponseGuardrailRequest):
             decision="allow",
             reason_code="ok",
             reasons=[],
+            policy_version=f"guardrails.v2.response.{policy_profile}",
             sanitized_body=payload.body,
         )
 

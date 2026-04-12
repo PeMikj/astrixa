@@ -61,6 +61,8 @@ Astrixa is designed to:
 - use a fully local anonymization stack by default
 - combine deterministic regex detection with a local spaCy NER model
 - restore allowed placeholders on the response path after response guardrails
+- support policy profiles such as `strict`, `balanced`, and `off`
+- allow policy inheritance from authenticated agent records
 
 ## System Modules
 

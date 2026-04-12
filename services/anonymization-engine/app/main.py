@@ -82,6 +82,7 @@ class AnonymizeResponse(BaseModel):
 class DeanonymizeRequest(BaseModel):
     body: Any
     replacements: list[Replacement] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class DeanonymizeResponse(BaseModel):
@@ -103,6 +104,8 @@ HEURISTIC_NER_PATTERNS: list[tuple[str, str, re.Pattern[str]]] = [
     ("ORG", "local-ner", re.compile(r"\b[A-Z][A-Za-z0-9&]+(?:\s+[A-Z][A-Za-z0-9&]+)*\s+(?:Inc|LLC|Ltd|Corp|Corporation|Company|Technologies|Systems)\b")),
     ("ADDRESS", "local-ner", re.compile(r"\b\d{1,5}\s+[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,3}\s+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln)\b")),
 ]
+
+STRICT_NO_RESTORE_TYPES = {"EMAIL", "PHONE", "API_KEY", "CARD", "SSN"}
 
 
 @app.middleware("http")
@@ -202,14 +205,17 @@ def _replace_text(text: str, replacements: list[Replacement], counters: dict[str
     return updated
 
 
-def _restore_value(value: Any, replacements: list[Replacement]) -> Any:
+def _restore_value(value: Any, replacements: list[Replacement], policy_profile: str) -> Any:
     if isinstance(value, dict):
-        return {key: _restore_value(nested_value, replacements) for key, nested_value in value.items()}
+        return {key: _restore_value(nested_value, replacements, policy_profile) for key, nested_value in value.items()}
     if isinstance(value, list):
-        return [_restore_value(item, replacements) for item in value]
+        return [_restore_value(item, replacements, policy_profile) for item in value]
     if isinstance(value, str):
         restored = value
         for replacement in replacements:
+            if policy_profile == "strict" and replacement.entity_type in STRICT_NO_RESTORE_TYPES:
+                restored = restored.replace(replacement.token, f"[REDACTED_{replacement.entity_type}]")
+                continue
             restored = restored.replace(replacement.token, replacement.original)
         return restored
     return value
@@ -217,6 +223,16 @@ def _restore_value(value: Any, replacements: list[Replacement]) -> Any:
 
 @app.post("/v1/anonymize", response_model=AnonymizeResponse)
 async def anonymize(payload: AnonymizeRequest):
+    policy_profile = str(payload.metadata.get("policy_profile") or "balanced").lower()
+    if policy_profile == "off":
+        return AnonymizeResponse(
+            decision="bypass",
+            policy_version="anonymization.v1.off",
+            sanitized_messages=payload.messages,
+            replacements=[],
+            entity_counts={},
+        )
+
     replacements: list[Replacement] = []
     counters: dict[str, int] = {}
     sanitized_messages = [
@@ -230,12 +246,14 @@ async def anonymize(payload: AnonymizeRequest):
         sanitized_messages=sanitized_messages,
         replacements=replacements,
         entity_counts=entity_counts,
+        policy_version=f"anonymization.v1.{policy_profile}",
     )
 
 
 @app.post("/v1/deanonymize", response_model=DeanonymizeResponse)
 async def deanonymize(payload: DeanonymizeRequest):
-    restored_body = _restore_value(payload.body, payload.replacements)
+    policy_profile = str(payload.metadata.get("policy_profile") or "balanced").lower()
+    restored_body = _restore_value(payload.body, payload.replacements, policy_profile)
     return DeanonymizeResponse(
         restored_body=restored_body,
         replacement_count=len(payload.replacements),

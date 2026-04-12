@@ -62,6 +62,7 @@ class AuthVerdict(BaseModel):
     subject: str | None = None
     subject_type: Literal["client", "agent", "service"] | None = None
     scopes: list[str] = Field(default_factory=list)
+    policy_profile: str = "balanced"
 
 
 def _load_static_tokens() -> dict[str, dict]:
@@ -70,6 +71,7 @@ def _load_static_tokens() -> dict[str, dict]:
             "subject": "astrixa-dev-client",
             "subject_type": "client",
             "scopes": ["llm:invoke"],
+            "policy_profile": "balanced",
         }
     }
     if not STATIC_TOKENS_JSON.strip():
@@ -115,6 +117,7 @@ async def _validate_agent_token(token: str, agent_id: str, required_scope: str) 
         subject=agent_id,
         subject_type="agent",
         scopes=allowed_scopes,
+        policy_profile=str(agent.get("policy_profile") or "balanced"),
     )
 
 
@@ -168,6 +171,7 @@ async def validate_auth(payload: AuthRequest):
                     subject=static_token.get("subject"),
                     subject_type=static_token.get("subject_type", "client"),
                     scopes=scopes,
+                    policy_profile=str(static_token.get("policy_profile") or "balanced"),
                 )
         elif payload.agent_id:
             verdict = await _validate_agent_token(token, payload.agent_id, payload.required_scope)

@@ -60,6 +60,8 @@ This document maps Astrixa against the assignment requirements and marks each it
   - regex + tokenization for structured secrets and PII
   - local spaCy NER model for names, organizations, and locations
   - response-side de-anonymization after response guardrails
+  - policy profiles `strict` / `balanced` / `off`
+  - agent-scoped policy inheritance through auth and gateway
 - `done` Authorization:
   - gateway bearer-token validation is implemented
   - upstream provider bearer auth is implemented

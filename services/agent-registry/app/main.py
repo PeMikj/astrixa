@@ -53,6 +53,7 @@ class AgentRecord(BaseModel):
     url: str
     version: str = "0.1.0"
     supported_methods: list[str] = Field(default_factory=list)
+    policy_profile: str = "balanced"
     auth: AgentAuth = Field(default_factory=AgentAuth)
 
 
@@ -62,6 +63,7 @@ class AgentPatch(BaseModel):
     url: str | None = None
     version: str | None = None
     supported_methods: list[str] | None = None
+    policy_profile: str | None = None
     auth: AgentAuth | None = None
 
 

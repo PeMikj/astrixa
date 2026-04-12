@@ -197,13 +197,13 @@ async def _anonymize_request(payload: dict[str, Any]) -> dict[str, Any]:
         return response.json()
 
 
-async def _deanonymize_body(body: Any, replacements: list[dict[str, Any]]) -> Any:
+async def _deanonymize_body(body: Any, replacements: list[dict[str, Any]], metadata: dict[str, Any]) -> Any:
     if not replacements:
         return body
     async with httpx.AsyncClient(timeout=10.0) as client:
         response = await client.post(
             f"{ANONYMIZATION_ENGINE_URL}/v1/deanonymize",
-            json={"body": body, "replacements": replacements},
+            json={"body": body, "replacements": replacements, "metadata": metadata},
         )
         response.raise_for_status()
         return response.json()["restored_body"]
@@ -229,6 +229,7 @@ async def _sanitize_sse_chunk(
     provider_id: str,
     request_id: str,
     replacements: list[dict[str, Any]],
+    metadata: dict[str, Any],
 ) -> bytes:
     try:
         text = raw_chunk.decode("utf-8")
@@ -255,7 +256,7 @@ async def _sanitize_sse_chunk(
             provider_id=provider_id,
             body=parsed,
             stream=True,
-            metadata={"request_id": request_id},
+            metadata={"request_id": request_id, **metadata},
         )
         if verdict["decision"] == "block":
             error_event = {
@@ -266,7 +267,7 @@ async def _sanitize_sse_chunk(
                 }
             }
             return f"data: {json.dumps(error_event)}\n\ndata: [DONE]\n\n".encode("utf-8")
-        restored_body = await _deanonymize_body(verdict["sanitized_body"], replacements)
+        restored_body = await _deanonymize_body(verdict["sanitized_body"], replacements, metadata)
         sanitized_parts.append(f"data: {json.dumps(restored_body)}")
 
     if not sanitized_parts:
@@ -455,6 +456,14 @@ async def chat_completions(request: ChatCompletionRequest, raw_request: Request)
             },
         )
 
+    policy_profile = (
+        raw_request.headers.get("x-astrixa-policy-profile")
+        or auth_verdict.get("policy_profile")
+        or request_payload["metadata"].get("policy_profile")
+        or "balanced"
+    )
+    request_payload["metadata"]["policy_profile"] = str(policy_profile).lower()
+
     verdict = await _check_guardrails(request_payload)
     if verdict["decision"] != "allow":
         return JSONResponse(
@@ -535,7 +544,13 @@ async def chat_completions(request: ChatCompletionRequest, raw_request: Request)
                             first_chunk_at = time.perf_counter()
                             TTFT_LATENCY.labels(provider_id=provider["provider_id"]).observe(first_chunk_at - started)
                         approx_output_tokens += max(chunk.count(b"content"), 1)
-                        yield await _sanitize_sse_chunk(chunk, provider["provider_id"], request_id, replacements)
+                        yield await _sanitize_sse_chunk(
+                            chunk,
+                            provider["provider_id"],
+                            request_id,
+                            replacements,
+                            request_payload["metadata"],
+                        )
             total_latency = time.perf_counter() - started
             if first_chunk_at is None:
                 TTFT_LATENCY.labels(provider_id=provider["provider_id"]).observe(total_latency)
@@ -569,6 +584,7 @@ async def chat_completions(request: ChatCompletionRequest, raw_request: Request)
             "X-Astrixa-Guardrails-Policy": verdict["policy_version"],
             "X-Astrixa-Anonymization-Applied": "true" if replacements else "false",
             "X-Astrixa-Anonymization-Replacements": str(len(replacements)),
+            "X-Astrixa-Policy-Profile": request_payload["metadata"]["policy_profile"],
         }
         return StreamingResponse(event_stream(), media_type="text/event-stream", headers=headers)
 
@@ -606,7 +622,7 @@ async def chat_completions(request: ChatCompletionRequest, raw_request: Request)
         provider_id=provider["provider_id"],
         body=upstream_payload,
         stream=False,
-        metadata={"request_id": request_id},
+        metadata={"request_id": request_id, **request_payload["metadata"]},
     )
     if response_verdict["decision"] == "block":
         await _log_mlflow_run(
@@ -642,7 +658,7 @@ async def chat_completions(request: ChatCompletionRequest, raw_request: Request)
                 "X-Astrixa-Anonymization-Replacements": str(len(replacements)),
             },
         )
-    payload = await _deanonymize_body(response_verdict["sanitized_body"], replacements)
+    payload = await _deanonymize_body(response_verdict["sanitized_body"], replacements, request_payload["metadata"])
     _observe_usage_metrics(provider["provider_id"], payload, total_latency)
     await _report_provider_feedback(provider["provider_id"], total_latency, outcome)
     input_tokens, output_tokens, cost = _extract_usage_metrics(payload)
@@ -676,5 +692,6 @@ async def chat_completions(request: ChatCompletionRequest, raw_request: Request)
             "X-Astrixa-Response-Guardrails-Policy": response_verdict["policy_version"],
             "X-Astrixa-Anonymization-Applied": "true" if replacements else "false",
             "X-Astrixa-Anonymization-Replacements": str(len(replacements)),
+            "X-Astrixa-Policy-Profile": request_payload["metadata"]["policy_profile"],
         },
     )
