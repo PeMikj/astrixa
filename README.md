@@ -193,6 +193,7 @@ The product scope, architecture decisions, phased implementation, and success cr
 - provider outage runbook: [docs/runbook-provider-outage.md](/home/p/astrixa/docs/runbook-provider-outage.md)
 - submission checklist: [docs/submission-checklist.md](/home/p/astrixa/docs/submission-checklist.md)
 - requirements coverage matrix: [docs/requirements-status.md](/home/p/astrixa/docs/requirements-status.md)
+- automated resilience scenarios: [tests/resilience/provider-ejection-checklist.md](/home/p/astrixa/tests/resilience/provider-ejection-checklist.md)
 
 ## Immediate Next Steps
 

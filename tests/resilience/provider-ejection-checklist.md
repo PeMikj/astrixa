@@ -38,3 +38,9 @@ The script:
 4. confirms gateway continuity during ejection,
 5. injects recovery feedback,
 6. verifies return to `healthy`.
+
+For a heavier mixed scenario with sustained traffic plus timed ejection and recovery, run:
+
+```bash
+python3 tests/resilience/run_mixed_load_resilience.py
+```
