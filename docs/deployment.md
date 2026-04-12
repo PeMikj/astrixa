@@ -106,6 +106,9 @@ curl -sS -X POST http://127.0.0.1:18080/v1/chat/completions \
 - provider registry persistence:
   - host path: [data/provider-registry](/home/p/astrixa/data/provider-registry)
   - container path: `/data`
+- agent registry persistence:
+  - host path: [data/agent-registry](/home/p/astrixa/data/agent-registry)
+  - container path: `/data`
 
 ## Production-Oriented Notes
 

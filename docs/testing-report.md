@@ -41,6 +41,8 @@ This report summarizes the current verified behavior of the Astrixa stack in the
 
 - provider-registry state survives container restart
 - test provider `mock-echo-secondary` remained present after restart
+- agent-registry state survives container restart
+- authenticated agent registration remains available after `agent-registry` restart
 
 ## Manual Test Evidence
 
@@ -54,6 +56,8 @@ Observed successful checks include:
 - synthetic routing error feedback moves provider to `degraded`
 - synthetic routing success feedback restores provider to `healthy`
 - active health probes can restore an ejected mock provider back to `healthy`
+- authenticated `demo-agent` request succeeds after agent-scoped auth wiring
+- MLflow records gateway runs with provider and agent-context tags
 
 ## Benchmark Snapshot
 

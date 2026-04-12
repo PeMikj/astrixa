@@ -87,6 +87,9 @@ services:
       retries: 5
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      AGENT_REGISTRY_DB_PATH: /data/agents.db
+    volumes:
+      - ./data/agent-registry:/data
     depends_on:
       otel-collector:
         condition: service_started
