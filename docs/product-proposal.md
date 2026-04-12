@@ -6,9 +6,9 @@ Astrixa is a secure, observable, multi-provider LLM routing platform with agent 
 
 The product differentiator is not only provider abstraction. The differentiator is a combined system that treats AI traffic as a high-risk, high-cost, latency-sensitive production workload and builds routing, safety, and observability as first-class platform features.
 
-## FAANG-Level Product Bar
+## Product Bar
 
-For Astrixa, "FAANG level" means:
+For Astrixa, a high production-grade bar means:
 
 - the architecture must survive real production traffic, not only local demos
 - security controls must be enforceable, testable, and fail closed where required

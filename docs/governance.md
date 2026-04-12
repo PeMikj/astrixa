@@ -16,7 +16,7 @@ This document defines the engineering, security, and operational governance base
 - incident readiness as a mandatory engineering concern
 - documented ownership for every critical service
 
-## FAANG-Level Governance Standard
+## Governance Standard
 
 Astrixa governance assumes a high operational bar:
 
