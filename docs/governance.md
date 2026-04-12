@@ -88,12 +88,21 @@ Governance rule:
 ### Guardrails
 
 - all external prompts pass ingress guardrails
+- all external prompts can pass anonymization before leaving Astrixa for external providers
 - all model responses pass response guardrails before leaving the gateway
 - configurable deny/block/quarantine actions
 - support detection for prompt injection and secret leakage
 - failed guardrails produce auditable events
 - guardrail policy version must be attached to request telemetry
 - guardrails are a mandatory documented control in Astrixa, not an implementation detail
+
+### Anonymization
+
+- sensitive request data should be masked locally before external LLM calls
+- deterministic detectors must handle structured secrets and common PII
+- local NER models may enrich masking for names, organizations, and locations
+- raw-to-token mappings must stay request-scoped unless a stricter retention policy explicitly allows otherwise
+- telemetry must record anonymization counts and policy version, not raw sensitive values
 
 ## Data Governance
 

@@ -15,6 +15,7 @@ services:
       ROUTING_ENGINE_URL: http://routing-engine:8080
       GUARDRAILS_ENGINE_URL: http://guardrails-engine:8080
       AUTH_LAYER_URL: http://auth-layer:8080
+      ANONYMIZATION_ENGINE_URL: http://anonymization-engine:8080
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       MLFLOW_TRACKING_URL: http://mlflow:5000
       MLFLOW_EXPERIMENT_NAME: Astrixa Gateway
@@ -27,6 +28,8 @@ services:
       routing-engine:
         condition: service_healthy
       guardrails-engine:
+        condition: service_healthy
+      anonymization-engine:
         condition: service_healthy
       mlflow:
         condition: service_healthy
@@ -128,6 +131,20 @@ services:
       otel-collector:
         condition: service_started
 
+  anonymization-engine:
+    build:
+      context: ./services/anonymization-engine
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    depends_on:
+      otel-collector:
+        condition: service_started
+
   mock-llm:
     build:
       context: ./services/provider-adapters/mock-llm
@@ -191,6 +208,7 @@ services:
       - agent-registry
       - auth-layer
       - guardrails-engine
+      - anonymization-engine
       - mock-llm
       - mlflow
       - node-exporter

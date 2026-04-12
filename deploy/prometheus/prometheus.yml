@@ -30,6 +30,10 @@ scrape_configs:
     static_configs:
       - targets: ["guardrails-engine:8080"]
 
+  - job_name: astrixa-anonymization-engine
+    static_configs:
+      - targets: ["anonymization-engine:8080"]
+
   - job_name: astrixa-mock-llm
     static_configs:
       - targets: ["mock-llm:8080"]

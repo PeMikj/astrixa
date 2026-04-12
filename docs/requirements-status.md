@@ -56,6 +56,10 @@ This document maps Astrixa against the assignment requirements and marks each it
   - prompt-injection detection
   - secret leakage detection
   - structured allow/block verdicts
+- `done` Local anonymization:
+  - regex + tokenization for structured secrets and PII
+  - local spaCy NER model for names, organizations, and locations
+  - response-side de-anonymization after response guardrails
 - `done` Authorization:
   - gateway bearer-token validation is implemented
   - upstream provider bearer auth is implemented

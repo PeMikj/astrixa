@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 ROUTING_ENGINE_URL = os.getenv("ROUTING_ENGINE_URL", "http://routing-engine:8080")
 GUARDRAILS_ENGINE_URL = os.getenv("GUARDRAILS_ENGINE_URL", "http://guardrails-engine:8080")
 AUTH_LAYER_URL = os.getenv("AUTH_LAYER_URL", "http://auth-layer:8080")
+ANONYMIZATION_ENGINE_URL = os.getenv("ANONYMIZATION_ENGINE_URL", "http://anonymization-engine:8080")
 OTEL_EXPORTER_OTLP_ENDPOINT = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4317")
 MLFLOW_TRACKING_URL = os.getenv("MLFLOW_TRACKING_URL", "").rstrip("/")
 MLFLOW_EXPERIMENT_NAME = os.getenv("MLFLOW_EXPERIMENT_NAME", "Astrixa Gateway")
@@ -189,6 +190,25 @@ async def _check_auth(authorization: str | None, agent_id: str | None) -> dict[s
         return response.json()
 
 
+async def _anonymize_request(payload: dict[str, Any]) -> dict[str, Any]:
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(f"{ANONYMIZATION_ENGINE_URL}/v1/anonymize", json=payload)
+        response.raise_for_status()
+        return response.json()
+
+
+async def _deanonymize_body(body: Any, replacements: list[dict[str, Any]]) -> Any:
+    if not replacements:
+        return body
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(
+            f"{ANONYMIZATION_ENGINE_URL}/v1/deanonymize",
+            json={"body": body, "replacements": replacements},
+        )
+        response.raise_for_status()
+        return response.json()["restored_body"]
+
+
 def _provider_endpoint(base_url: str, api_path: str) -> str:
     parts = urlsplit(base_url.rstrip("/"))
     normalized_base_path = parts.path.rstrip("/")
@@ -204,7 +224,12 @@ def _provider_endpoint(base_url: str, api_path: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc, final_path, "", ""))
 
 
-async def _sanitize_sse_chunk(raw_chunk: bytes, provider_id: str, request_id: str) -> bytes:
+async def _sanitize_sse_chunk(
+    raw_chunk: bytes,
+    provider_id: str,
+    request_id: str,
+    replacements: list[dict[str, Any]],
+) -> bytes:
     try:
         text = raw_chunk.decode("utf-8")
     except UnicodeDecodeError:
@@ -241,7 +266,8 @@ async def _sanitize_sse_chunk(raw_chunk: bytes, provider_id: str, request_id: st
                 }
             }
             return f"data: {json.dumps(error_event)}\n\ndata: [DONE]\n\n".encode("utf-8")
-        sanitized_parts.append(f"data: {json.dumps(verdict['sanitized_body'])}")
+        restored_body = await _deanonymize_body(verdict["sanitized_body"], replacements)
+        sanitized_parts.append(f"data: {json.dumps(restored_body)}")
 
     if not sanitized_parts:
         return raw_chunk
@@ -450,7 +476,12 @@ async def chat_completions(request: ChatCompletionRequest, raw_request: Request)
             },
         )
 
-    route = await _resolve_provider(request_payload)
+    anonymization = await _anonymize_request(request_payload)
+    provider_payload = dict(request_payload)
+    provider_payload["messages"] = anonymization["sanitized_messages"]
+    replacements = anonymization.get("replacements", [])
+
+    route = await _resolve_provider(provider_payload)
     provider = route["provider"]
     completion_url = _provider_endpoint(provider["base_url"], "/v1/chat/completions")
     request_id = f"chatcmpl_{uuid.uuid4().hex}"
@@ -476,7 +507,7 @@ async def chat_completions(request: ChatCompletionRequest, raw_request: Request)
                     "POST",
                     completion_url,
                     headers=upstream_headers,
-                    json=request_payload,
+                    json=provider_payload,
                 ) as upstream:
                     if upstream.status_code >= 400:
                         outcome = "error"
@@ -504,7 +535,7 @@ async def chat_completions(request: ChatCompletionRequest, raw_request: Request)
                             first_chunk_at = time.perf_counter()
                             TTFT_LATENCY.labels(provider_id=provider["provider_id"]).observe(first_chunk_at - started)
                         approx_output_tokens += max(chunk.count(b"content"), 1)
-                        yield await _sanitize_sse_chunk(chunk, provider["provider_id"], request_id)
+                        yield await _sanitize_sse_chunk(chunk, provider["provider_id"], request_id, replacements)
             total_latency = time.perf_counter() - started
             if first_chunk_at is None:
                 TTFT_LATENCY.labels(provider_id=provider["provider_id"]).observe(total_latency)
@@ -536,6 +567,8 @@ async def chat_completions(request: ChatCompletionRequest, raw_request: Request)
             "X-Astrixa-Request-Id": request_id,
             "X-Astrixa-Guardrails-Decision": verdict["decision"],
             "X-Astrixa-Guardrails-Policy": verdict["policy_version"],
+            "X-Astrixa-Anonymization-Applied": "true" if replacements else "false",
+            "X-Astrixa-Anonymization-Replacements": str(len(replacements)),
         }
         return StreamingResponse(event_stream(), media_type="text/event-stream", headers=headers)
 
@@ -545,7 +578,7 @@ async def chat_completions(request: ChatCompletionRequest, raw_request: Request)
         upstream = await client.post(
             completion_url,
             headers=upstream_headers,
-            json=request_payload,
+            json=provider_payload,
         )
         if upstream.status_code >= 400:
             outcome = "error"
@@ -605,9 +638,11 @@ async def chat_completions(request: ChatCompletionRequest, raw_request: Request)
                 "X-Astrixa-Guardrails-Policy": verdict["policy_version"],
                 "X-Astrixa-Response-Guardrails-Decision": response_verdict["decision"],
                 "X-Astrixa-Response-Guardrails-Policy": response_verdict["policy_version"],
+                "X-Astrixa-Anonymization-Applied": "true" if replacements else "false",
+                "X-Astrixa-Anonymization-Replacements": str(len(replacements)),
             },
         )
-    payload = response_verdict["sanitized_body"]
+    payload = await _deanonymize_body(response_verdict["sanitized_body"], replacements)
     _observe_usage_metrics(provider["provider_id"], payload, total_latency)
     await _report_provider_feedback(provider["provider_id"], total_latency, outcome)
     input_tokens, output_tokens, cost = _extract_usage_metrics(payload)
@@ -639,5 +674,7 @@ async def chat_completions(request: ChatCompletionRequest, raw_request: Request)
             "X-Astrixa-Guardrails-Policy": verdict["policy_version"],
             "X-Astrixa-Response-Guardrails-Decision": response_verdict["decision"],
             "X-Astrixa-Response-Guardrails-Policy": response_verdict["policy_version"],
+            "X-Astrixa-Anonymization-Applied": "true" if replacements else "false",
+            "X-Astrixa-Anonymization-Replacements": str(len(replacements)),
         },
     )

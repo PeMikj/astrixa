@@ -34,6 +34,7 @@ Design rule:
 - Support streaming responses without breaking client connections.
 - Register providers and A2A agents dynamically.
 - Enforce security guardrails before and after model invocation.
+- Mask sensitive request data before external provider calls and restore allowed placeholders on the response path.
 - Collect logs, traces, metrics, and cost telemetry.
 - Run locally and in CI with Docker Compose.
 
@@ -49,6 +50,18 @@ Astrixa is designed to:
 - make guardrail outcomes visible in telemetry and governance artifacts
 - enforce response-side guardrails through a dedicated verdict path, including suppression of unsafe reasoning leakage
 
+## Anonymization
+
+Anonymization is a first-class pre-provider control in Astrixa.
+
+Astrixa is designed to:
+
+- detect structured sensitive data locally before any external LLM call
+- tokenize or mask PII and secret-like values in the gateway request path
+- use a fully local anonymization stack by default
+- combine deterministic regex detection with a local spaCy NER model
+- restore allowed placeholders on the response path after response guardrails
+
 ## System Modules
 
 - `api-gateway`: external entrypoint for client and agent traffic.
@@ -56,6 +69,7 @@ Astrixa is designed to:
 - `provider-registry`: dynamic source of truth for providers and model metadata.
 - `agent-registry`: A2A agent catalog with Agent Cards and supported methods.
 - `guardrails-engine`: prompt-injection, secret leakage, policy, and content checks.
+- `anonymization-engine`: local request anonymization and response de-anonymization.
 - `auth-layer`: token validation, service-to-service authn/authz, policy enforcement.
 - `telemetry-layer`: OpenTelemetry, Prometheus, Grafana, MLflow integration.
 - `mlflow`: local run-tracking backend for gateway, provider, and agent-context execution metadata.
@@ -68,7 +82,8 @@ flowchart LR
     Client[Client / Agent / SDK] --> GW[API Gateway]
     GW --> AUTH[Auth Layer]
     AUTH --> GR[Guardrails Engine]
-    GR --> RE[Routing Engine]
+    GR --> ANON[Anonymization Engine]
+    ANON --> RE[Routing Engine]
     RE --> PR[Provider Registry]
     RE --> AR[Agent Registry]
     RE --> PA1[Provider Adapter: OpenAI]
@@ -123,6 +138,7 @@ flowchart LR
 ### Level 3
 
 - Guardrails for prompt injection, secret leakage, and policy abuse.
+- Local anonymization for sensitive request data before provider invocation.
 - Token-based auth for agents and providers.
 - Load, chaos, and resilience testing.
 - Security hardening and operational runbooks.

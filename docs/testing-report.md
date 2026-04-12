@@ -19,6 +19,13 @@ This report summarizes the current verified behavior of the Astrixa stack in the
 - guardrail policy version is returned in headers and body
 - response-side guardrails sanitize unsafe provider fields before client delivery
 
+### Anonymization
+
+- local anonymization runs before external provider invocation
+- deterministic regex masking handles email, phone, SSN, card-like patterns, and API-key-like strings
+- local spaCy NER masking handles person, organization, and location entities
+- response-side de-anonymization restores placeholders after response guardrails
+
 ### Routing
 
 - local mock routing works for `mock-1`
@@ -57,6 +64,8 @@ Observed successful checks include:
 - `research-model` request succeeds through `aicohort-research`
 - response sanitization removes `reasoning` fields from provider responses
 - response guardrails now run through `guardrails-engine`, not only gateway-local sanitization
+- anonymized `mock-1` request returned `X-Astrixa-Anonymization-Applied: true`
+- regex + spaCy anonymization path restored `Satya Nadella`, `Paris`, `Microsoft`, and `satya@example.com` after provider response
 - synthetic routing error feedback moves provider to `degraded`
 - synthetic routing success feedback restores provider to `healthy`
 - active health probes can restore an ejected mock provider back to `healthy`
