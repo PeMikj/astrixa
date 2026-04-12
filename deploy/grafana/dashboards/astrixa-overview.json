@@ -225,6 +225,60 @@
       ],
       "title": "Provider Health Probe Failures / Latency",
       "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "id": 9,
+      "targets": [
+        {
+          "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])))",
+          "refId": "A"
+        }
+      ],
+      "title": "Host CPU Utilization",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "id": 10,
+      "targets": [
+        {
+          "expr": "100 * sum by (job) (rate(process_cpu_seconds_total{job=~\"astrixa-(api-gateway|routing-engine|provider-registry|agent-registry|auth-layer|guardrails-engine|mock-llm)\"}[5m]))",
+          "refId": "A"
+        }
+      ],
+      "title": "Service Process CPU Utilization",
+      "type": "timeseries"
     }
   ],
   "schemaVersion": 39,
@@ -242,5 +296,5 @@
   "timezone": "browser",
   "title": "Astrixa Overview",
   "uid": "astrixa-overview",
-  "version": 2
+  "version": 3
 }

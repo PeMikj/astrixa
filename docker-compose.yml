@@ -165,6 +165,18 @@ services:
     ports:
       - "4317:4317"
 
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($|/)
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+
   prometheus:
     image: prom/prometheus:v3.2.1
     command: ["--config.file=/etc/prometheus/prometheus.yml"]
@@ -181,6 +193,7 @@ services:
       - guardrails-engine
       - mock-llm
       - mlflow
+      - node-exporter
       - otel-collector
 
   grafana:

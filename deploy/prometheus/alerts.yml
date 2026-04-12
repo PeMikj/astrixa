@@ -55,3 +55,24 @@ groups:
           summary: "A provider is not receiving traffic"
           description: "Provider selection rate is zero; this may indicate ejection, misconfiguration, or lack of demand."
 
+  - name: astrixa-infra
+    rules:
+      - alert: AstrixaHostHighCPU
+        expr: 100 * (1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m]))) > 85
+        for: 10m
+        labels:
+          severity: warning
+          service: node-exporter
+        annotations:
+          summary: "Astrixa host CPU usage is high"
+          description: "Average host CPU utilization has exceeded 85% for 10 minutes."
+
+      - alert: AstrixaGatewayProcessHighCPU
+        expr: 100 * sum(rate(process_cpu_seconds_total{job="astrixa-api-gateway"}[5m])) > 80
+        for: 10m
+        labels:
+          severity: warning
+          service: api-gateway
+        annotations:
+          summary: "Astrixa api-gateway process CPU is high"
+          description: "The api-gateway process CPU usage has exceeded 80% for 10 minutes."

@@ -18,9 +18,11 @@ This document maps Astrixa against the assignment requirements and marks each it
   - Prometheus metrics
   - Grafana dashboards
   - health endpoints for every service
-- `partial` CPU observability:
+- `done` CPU observability:
   - process-level metrics are exposed through the Python Prometheus client
-  - CPU-specific dashboarding is present only at a basic level, not as a full host/node observability setup
+  - host CPU metrics are scraped through `node-exporter`
+  - service CPU metrics are derived from `process_cpu_seconds_total`
+  - Grafana includes host and service CPU panels
 
 ## Level 2
 
@@ -66,7 +68,6 @@ This document maps Astrixa against the assignment requirements and marks each it
 
 ## Current Gap Summary
 
-- `partial` extended CPU/node observability depth
 - `partial` sustained high-volume load and automated chaos coverage
 - `done` dedicated response-guardrails service verdict path
 

@@ -66,6 +66,7 @@ curl -sS -X POST http://127.0.0.1:18080/v1/chat/completions \
 - MLflow: `http://127.0.0.1:5001`
 - Prometheus: `http://127.0.0.1:9090`
 - Gateway metrics: `http://127.0.0.1:18080/metrics`
+- node-exporter: scraped internally on `node-exporter:9100`
 
 ## Agent-Scoped Auth Example
 

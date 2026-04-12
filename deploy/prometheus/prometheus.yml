@@ -22,6 +22,18 @@ scrape_configs:
     static_configs:
       - targets: ["agent-registry:8080"]
 
+  - job_name: astrixa-auth-layer
+    static_configs:
+      - targets: ["auth-layer:8080"]
+
+  - job_name: astrixa-guardrails-engine
+    static_configs:
+      - targets: ["guardrails-engine:8080"]
+
   - job_name: astrixa-mock-llm
     static_configs:
       - targets: ["mock-llm:8080"]
+
+  - job_name: astrixa-node-exporter
+    static_configs:
+      - targets: ["node-exporter:9100"]

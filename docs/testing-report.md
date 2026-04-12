@@ -37,6 +37,8 @@ This report summarizes the current verified behavior of the Astrixa stack in the
 - Grafana dashboard assets are provisioned
 - gateway exposes TTFT, TPOT, token, and cost metrics
 - provider-registry exposes health-probe metrics
+- Prometheus scrapes host CPU metrics through `node-exporter`
+- Prometheus derives service CPU usage from `process_cpu_seconds_total`
 
 ### Persistence
 
@@ -107,6 +109,7 @@ Interpretation:
 - no heavy sustained load run executed yet
 - no fully automated chaos suite executed yet
 - registry persistence currently uses local SQLite rather than managed database
+- node/process telemetry is implemented locally, but production deployments still need environment-specific hardening
 - response-side guardrails are implemented as sanitization in gateway, not yet a separate verdict service
 
 ## Recommended Next Validation
