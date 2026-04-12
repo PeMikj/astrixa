@@ -1,0 +1,168 @@
+name: astrixa
+
+services:
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+    ports:
+      - "18080:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    environment:
+      ROUTING_ENGINE_URL: http://routing-engine:8080
+      GUARDRAILS_ENGINE_URL: http://guardrails-engine:8080
+      AUTH_LAYER_URL: http://auth-layer:8080
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      AICOHORT_API_KEY: ${AICOHORT_API_KEY:-}
+      ASTRIXA_GATEWAY_TOKEN: ${ASTRIXA_GATEWAY_TOKEN:-}
+    depends_on:
+      auth-layer:
+        condition: service_healthy
+      routing-engine:
+        condition: service_healthy
+      guardrails-engine:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+
+  routing-engine:
+    build:
+      context: ./services/routing-engine
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    environment:
+      PROVIDER_REGISTRY_URL: http://provider-registry:8080
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    depends_on:
+      provider-registry:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+
+  provider-registry:
+    build:
+      context: ./services/provider-registry
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      PROVIDER_REGISTRY_DB_PATH: /data/providers.db
+      AICOHORT_BASE_URL: ${AICOHORT_BASE_URL:-}
+      AICOHORT_API_KEY: ${AICOHORT_API_KEY:-}
+      AICOHORT_MODEL: ${AICOHORT_MODEL:-}
+    volumes:
+      - ./data/provider-registry:/data
+    depends_on:
+      mock-llm:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+
+  agent-registry:
+    build:
+      context: ./services/agent-registry
+    ports:
+      - "8082:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    depends_on:
+      otel-collector:
+        condition: service_started
+
+  auth-layer:
+    build:
+      context: ./services/auth-layer
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      ASTRIXA_GATEWAY_TOKEN: ${ASTRIXA_GATEWAY_TOKEN:-}
+    depends_on:
+      otel-collector:
+        condition: service_started
+
+  guardrails-engine:
+    build:
+      context: ./services/guardrails-engine
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    depends_on:
+      otel-collector:
+        condition: service_started
+
+  mock-llm:
+    build:
+      context: ./services/provider-adapters/mock-llm
+    ports:
+      - "8090:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    depends_on:
+      otel-collector:
+        condition: service_started
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.121.0
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./deploy/otel/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "4317:4317"
+
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - api-gateway
+      - routing-engine
+      - provider-registry
+      - agent-registry
+      - auth-layer
+      - guardrails-engine
+      - mock-llm
+      - otel-collector
+
+  grafana:
+    image: grafana/grafana:11.5.2
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus

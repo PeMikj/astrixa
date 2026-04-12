@@ -1,0 +1,57 @@
+groups:
+  - name: astrixa-gateway
+    rules:
+      - alert: AstrixaGatewayHighP95Latency
+        expr: histogram_quantile(0.95, sum(rate(astrixa_gateway_request_latency_seconds_bucket{endpoint="/v1/chat/completions"}[10m])) by (le)) > 5
+        for: 10m
+        labels:
+          severity: warning
+          service: api-gateway
+        annotations:
+          summary: "Astrixa gateway p95 latency is high"
+          description: "Gateway p95 latency for chat completions has exceeded 5 seconds for 10 minutes."
+
+      - alert: AstrixaGatewayAuthFailures
+        expr: sum(rate(astrixa_gateway_requests_total{endpoint="/v1/chat/completions",status_code="401"}[10m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          service: api-gateway
+        annotations:
+          summary: "Astrixa gateway is seeing repeated auth failures"
+          description: "Unauthorized request rate is above expected baseline."
+
+  - name: astrixa-guardrails
+    rules:
+      - alert: AstrixaGuardrailBlocksSpike
+        expr: sum(rate(astrixa_gateway_requests_total{endpoint="/v1/chat/completions",status_code="403"}[10m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          service: guardrails-engine
+        annotations:
+          summary: "Astrixa guardrail block rate increased"
+          description: "Guardrail block rate suggests abuse attempts or policy mismatches."
+
+  - name: astrixa-providers
+    rules:
+      - alert: AstrixaProviderHealthCheckFailures
+        expr: sum(rate(astrixa_provider_registry_health_check_failures_total[10m])) by (provider_id) > 0
+        for: 10m
+        labels:
+          severity: warning
+          service: provider-registry
+        annotations:
+          summary: "Provider health probe failures detected"
+          description: "At least one provider has repeated probe failures."
+
+      - alert: AstrixaProviderSelectionDropped
+        expr: sum(rate(astrixa_routing_provider_selection_total[15m])) by (provider_id) == 0
+        for: 15m
+        labels:
+          severity: info
+          service: routing-engine
+        annotations:
+          summary: "A provider is not receiving traffic"
+          description: "Provider selection rate is zero; this may indicate ejection, misconfiguration, or lack of demand."
+

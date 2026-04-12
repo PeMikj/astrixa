@@ -1,0 +1,45 @@
+openapi: 3.1.0
+info:
+  title: Astrixa Provider Registry
+  version: 1.0.0
+paths:
+  /healthz:
+    get:
+      responses:
+        "200":
+          description: OK
+  /v1/providers:
+    get:
+      summary: List providers
+      responses:
+        "200":
+          description: Providers
+    post:
+      summary: Register provider
+      responses:
+        "201":
+          description: Created
+  /v1/providers/{provider_id}:
+    get:
+      summary: Get provider by ID
+      parameters:
+        - in: path
+          name: provider_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Provider
+    patch:
+      summary: Update provider metadata
+      parameters:
+        - in: path
+          name: provider_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated
+

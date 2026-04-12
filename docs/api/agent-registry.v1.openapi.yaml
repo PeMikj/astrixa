@@ -1,0 +1,45 @@
+openapi: 3.1.0
+info:
+  title: Astrixa Agent Registry
+  version: 1.0.0
+paths:
+  /healthz:
+    get:
+      responses:
+        "200":
+          description: OK
+  /v1/agents:
+    get:
+      summary: List agents
+      responses:
+        "200":
+          description: Agents
+    post:
+      summary: Register agent
+      responses:
+        "201":
+          description: Created
+  /v1/agents/{agent_id}:
+    get:
+      summary: Get agent by ID
+      parameters:
+        - in: path
+          name: agent_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Agent
+    patch:
+      summary: Update agent metadata
+      parameters:
+        - in: path
+          name: agent_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated
+
