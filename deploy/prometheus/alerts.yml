@@ -21,6 +21,16 @@ groups:
           summary: "Astrixa gateway is seeing repeated auth failures"
           description: "Unauthorized request rate is above expected baseline."
 
+      - alert: AstrixaPolicyProfileOffTraffic
+        expr: sum(rate(astrixa_gateway_policy_profile_requests_total{policy_profile="off"}[10m])) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+          service: api-gateway
+        annotations:
+          summary: "Astrixa is receiving policy_profile=off traffic"
+          description: "Requests are bypassing policy-controlled security behavior more often than expected."
+
   - name: astrixa-guardrails
     rules:
       - alert: AstrixaGuardrailBlocksSpike
@@ -32,6 +42,26 @@ groups:
         annotations:
           summary: "Astrixa guardrail block rate increased"
           description: "Guardrail block rate suggests abuse attempts or policy mismatches."
+
+      - alert: AstrixaAuthLayerDeniesSpike
+        expr: sum(rate(astrixa_auth_verdict_total{decision="deny"}[10m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          service: auth-layer
+        annotations:
+          summary: "Astrixa auth deny rate increased"
+          description: "Auth-layer deny rate suggests invalid tokens, abuse, or misconfigured clients."
+
+      - alert: AstrixaStrictAnonymizationSpike
+        expr: sum(increase(astrixa_anonymization_entities_total[10m])) > 50
+        for: 10m
+        labels:
+          severity: info
+          service: anonymization-engine
+        annotations:
+          summary: "Astrixa anonymization volume increased"
+          description: "Sensitive entity masking volume increased materially and should be reviewed for abuse or traffic mix changes."
 
   - name: astrixa-providers
     rules:
