@@ -63,6 +63,11 @@ REQUEST_COST_USD = Counter(
     "Observed upstream request cost in USD",
     ["provider_id"],
 )
+POLICY_PROFILE_COUNT = Counter(
+    "astrixa_gateway_policy_profile_requests_total",
+    "Gateway requests by applied security policy profile",
+    ["policy_profile"],
+)
 
 app = FastAPI(title="Astrixa API Gateway", version="1.0.0")
 
@@ -463,6 +468,7 @@ async def chat_completions(request: ChatCompletionRequest, raw_request: Request)
         or "balanced"
     )
     request_payload["metadata"]["policy_profile"] = str(policy_profile).lower()
+    POLICY_PROFILE_COUNT.labels(policy_profile=request_payload["metadata"]["policy_profile"]).inc()
 
     verdict = await _check_guardrails(request_payload)
     if verdict["decision"] != "allow":

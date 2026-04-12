@@ -279,6 +279,110 @@
       ],
       "title": "Service Process CPU Utilization",
       "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
+      "id": 11,
+      "targets": [
+        {
+          "expr": "sum by (decision) (rate(astrixa_auth_verdict_total[5m]))",
+          "refId": "A"
+        }
+      ],
+      "title": "Auth Verdict Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 40
+      },
+      "id": 12,
+      "targets": [
+        {
+          "expr": "sum by (decision, reason_code) (rate(astrixa_guardrails_verdict_total[5m]))",
+          "refId": "A"
+        }
+      ],
+      "title": "Guardrails Verdict Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 48
+      },
+      "id": 13,
+      "targets": [
+        {
+          "expr": "sum by (entity_type, mode) (increase(astrixa_anonymization_entities_total[15m]))",
+          "refId": "A"
+        }
+      ],
+      "title": "Anonymized Entities Last 15m",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 48
+      },
+      "id": 14,
+      "targets": [
+        {
+          "expr": "sum by (policy_profile) (rate(astrixa_gateway_policy_profile_requests_total[5m]))",
+          "refId": "A"
+        }
+      ],
+      "title": "Policy Profile Usage",
+      "type": "timeseries"
     }
   ],
   "schemaVersion": 39,
@@ -296,5 +400,5 @@
   "timezone": "browser",
   "title": "Astrixa Overview",
   "uid": "astrixa-overview",
-  "version": 3
+  "version": 4
 }
