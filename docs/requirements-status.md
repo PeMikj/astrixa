@@ -43,7 +43,10 @@ This document maps Astrixa against the assignment requirements and marks each it
   - input tokens
   - output tokens
   - request cost
-- `missing` MLflow tracing for agents and LLM runs
+- `done` MLflow tracking:
+  - local MLflow service in Docker Compose
+  - gateway request runs logged with provider, route, auth, latency, token, and cost metadata
+  - agent-context requests are tagged when `agent_id` is present
 
 ## Level 3
 
@@ -51,10 +54,10 @@ This document maps Astrixa against the assignment requirements and marks each it
   - prompt-injection detection
   - secret leakage detection
   - structured allow/block verdicts
-- `partial` Authorization:
+- `done` Authorization:
   - gateway bearer-token validation is implemented
   - upstream provider bearer auth is implemented
-  - full agent-specific authn/authz lifecycle is not yet implemented
+  - agent-specific token validation is implemented through `agent-registry` metadata plus env-backed secret resolution
 - `partial` Testing and operations:
   - benchmark runner exists
   - real load snapshots are documented
@@ -63,11 +66,9 @@ This document maps Astrixa against the assignment requirements and marks each it
 
 ## Current Gap Summary
 
-- `missing` MLflow integration
-- `partial` full agent authorization model
 - `partial` extended CPU/node observability depth
 - `partial` sustained high-volume load and automated chaos coverage
 
 ## Recommendation
 
-The highest-value remaining item with moderate implementation cost is MLflow or a narrower tracing substitute. The most expensive remaining work is a serious automated chaos/load campaign with stronger infrastructure-level observability.
+The biggest remaining engineering lift is a serious automated chaos/load campaign with stronger infrastructure-level observability and deeper CPU/node telemetry.

@@ -40,6 +40,8 @@ FastAPIInstrumentor.instrument_app(app)
 
 class AgentAuth(BaseModel):
     type: str = "bearer_token"
+    token_env: str | None = None
+    scopes: list[str] = Field(default_factory=lambda: ["llm:invoke"])
 
 
 class AgentRecord(BaseModel):
@@ -58,6 +60,7 @@ class AgentPatch(BaseModel):
     url: str | None = None
     version: str | None = None
     supported_methods: list[str] | None = None
+    auth: AgentAuth | None = None
 
 
 AGENTS: dict[str, AgentRecord] = {}

@@ -1,7 +1,9 @@
 import os
 import time
+import json
 from typing import Literal
 
+import httpx
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import PlainTextResponse
 from opentelemetry import trace
@@ -16,6 +18,8 @@ from pydantic import BaseModel, Field
 
 OTEL_EXPORTER_OTLP_ENDPOINT = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4317")
 ASTRIXA_GATEWAY_TOKEN = os.getenv("ASTRIXA_GATEWAY_TOKEN", "astrixa-dev-token")
+AGENT_REGISTRY_URL = os.getenv("AGENT_REGISTRY_URL", "http://agent-registry:8080")
+STATIC_TOKENS_JSON = os.getenv("ASTRIXA_STATIC_TOKENS_JSON", "")
 
 REQUEST_COUNT = Counter(
     "astrixa_auth_requests_total",
@@ -49,13 +53,69 @@ FastAPIInstrumentor.instrument_app(app)
 class AuthRequest(BaseModel):
     authorization: str | None = None
     required_scope: str = "llm:invoke"
+    agent_id: str | None = None
 
 
 class AuthVerdict(BaseModel):
     decision: Literal["allow", "deny"]
     reason_code: str
     subject: str | None = None
+    subject_type: Literal["client", "agent", "service"] | None = None
     scopes: list[str] = Field(default_factory=list)
+
+
+def _load_static_tokens() -> dict[str, dict]:
+    default_tokens = {
+        ASTRIXA_GATEWAY_TOKEN: {
+            "subject": "astrixa-dev-client",
+            "subject_type": "client",
+            "scopes": ["llm:invoke"],
+        }
+    }
+    if not STATIC_TOKENS_JSON.strip():
+        return default_tokens
+    try:
+        configured = json.loads(STATIC_TOKENS_JSON)
+    except json.JSONDecodeError:
+        return default_tokens
+    if not isinstance(configured, dict):
+        return default_tokens
+    return {**default_tokens, **configured}
+
+
+STATIC_TOKENS = _load_static_tokens()
+
+
+async def _validate_agent_token(token: str, agent_id: str, required_scope: str) -> AuthVerdict:
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(f"{AGENT_REGISTRY_URL}/v1/agents/{agent_id}")
+            if response.status_code == 404:
+                return AuthVerdict(decision="deny", reason_code="agent_not_found")
+            response.raise_for_status()
+            agent = response.json()
+    except httpx.HTTPError:
+        return AuthVerdict(decision="deny", reason_code="agent_registry_unavailable")
+
+    auth = agent.get("auth") or {}
+    token_env = auth.get("token_env")
+    allowed_scopes = list(auth.get("scopes") or [])
+    if not token_env:
+        return AuthVerdict(decision="deny", reason_code="agent_auth_not_configured")
+    expected_token = os.getenv(token_env, "").strip()
+    if not expected_token:
+        return AuthVerdict(decision="deny", reason_code="agent_token_env_missing")
+    if token != expected_token:
+        return AuthVerdict(decision="deny", reason_code="invalid_agent_token")
+    if required_scope not in allowed_scopes:
+        return AuthVerdict(decision="deny", reason_code="insufficient_scope")
+    return AuthVerdict(
+        decision="allow",
+        reason_code="ok",
+        subject=agent_id,
+        subject_type="agent",
+        scopes=allowed_scopes,
+    )
 
 
 @app.middleware("http")
@@ -96,16 +156,23 @@ async def validate_auth(payload: AuthRequest):
         verdict = AuthVerdict(decision="deny", reason_code="missing_bearer_token")
     else:
         token = authz[len(prefix):].strip()
-        if token != ASTRIXA_GATEWAY_TOKEN:
-            verdict = AuthVerdict(decision="deny", reason_code="invalid_token")
+        static_token = STATIC_TOKENS.get(token)
+        if static_token is not None:
+            scopes = list(static_token.get("scopes") or [])
+            if payload.required_scope not in scopes:
+                verdict = AuthVerdict(decision="deny", reason_code="insufficient_scope")
+            else:
+                verdict = AuthVerdict(
+                    decision="allow",
+                    reason_code="ok",
+                    subject=static_token.get("subject"),
+                    subject_type=static_token.get("subject_type", "client"),
+                    scopes=scopes,
+                )
+        elif payload.agent_id:
+            verdict = await _validate_agent_token(token, payload.agent_id, payload.required_scope)
         else:
-            verdict = AuthVerdict(
-                decision="allow",
-                reason_code="ok",
-                subject="astrixa-dev-client",
-                scopes=["llm:invoke"],
-            )
+            verdict = AuthVerdict(decision="deny", reason_code="invalid_token")
 
     VERDICT_COUNT.labels(decision=verdict.decision).inc()
     return verdict
-

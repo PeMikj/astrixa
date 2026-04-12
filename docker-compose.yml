@@ -16,6 +16,8 @@ services:
       GUARDRAILS_ENGINE_URL: http://guardrails-engine:8080
       AUTH_LAYER_URL: http://auth-layer:8080
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      MLFLOW_TRACKING_URL: http://mlflow:5000
+      MLFLOW_EXPERIMENT_NAME: Astrixa Gateway
       AICOHORT_API_KEY: ${AICOHORT_API_KEY:-}
       MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
       ASTRIXA_GATEWAY_TOKEN: ${ASTRIXA_GATEWAY_TOKEN:-}
@@ -25,6 +27,8 @@ services:
       routing-engine:
         condition: service_healthy
       guardrails-engine:
+        condition: service_healthy
+      mlflow:
         condition: service_healthy
       otel-collector:
         condition: service_started
@@ -97,8 +101,13 @@ services:
       retries: 5
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      AGENT_REGISTRY_URL: http://agent-registry:8080
       ASTRIXA_GATEWAY_TOKEN: ${ASTRIXA_GATEWAY_TOKEN:-}
+      ASTRIXA_STATIC_TOKENS_JSON: ${ASTRIXA_STATIC_TOKENS_JSON:-}
+      ASTRIXA_AGENT_DEMO_TOKEN: ${ASTRIXA_AGENT_DEMO_TOKEN:-}
     depends_on:
+      agent-registry:
+        condition: service_healthy
       otel-collector:
         condition: service_started
 
@@ -132,6 +141,19 @@ services:
       otel-collector:
         condition: service_started
 
+  mlflow:
+    build:
+      context: ./services/mlflow
+    ports:
+      - "5001:5000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - ./data/mlflow:/data
+
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.121.0
     command: ["--config=/etc/otelcol-contrib/config.yaml"]
@@ -155,6 +177,7 @@ services:
       - auth-layer
       - guardrails-engine
       - mock-llm
+      - mlflow
       - otel-collector
 
   grafana:

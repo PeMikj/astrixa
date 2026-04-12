@@ -58,6 +58,7 @@ Astrixa is designed to:
 - `guardrails-engine`: prompt-injection, secret leakage, policy, and content checks.
 - `auth-layer`: token validation, service-to-service authn/authz, policy enforcement.
 - `telemetry-layer`: OpenTelemetry, Prometheus, Grafana, MLflow integration.
+- `mlflow`: local run-tracking backend for gateway, provider, and agent-context execution metadata.
 - `provider-adapters`: real and mock connectors for OpenAI, Anthropic, local mocks, and future providers.
 
 ## Architecture
