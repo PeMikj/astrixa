@@ -22,3 +22,19 @@ Verify that Astrixa ejects a degraded provider from routing and later restores i
 
 This scenario has been verified manually in the local Compose stack.
 
+## Automated Path
+
+The same scenario is now executable through:
+
+```bash
+python3 tests/resilience/run_provider_ejection.py
+```
+
+The script:
+
+1. ensures `mock-echo-secondary` exists,
+2. injects synthetic provider failure through `routing-engine`,
+3. verifies degraded/ejected state in `provider-registry`,
+4. confirms gateway continuity during ejection,
+5. injects recovery feedback,
+6. verifies return to `healthy`.

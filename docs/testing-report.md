@@ -62,6 +62,7 @@ Observed successful checks include:
 - active health probes can restore an ejected mock provider back to `healthy`
 - authenticated `demo-agent` request succeeds after agent-scoped auth wiring
 - MLflow records gateway runs with provider and agent-context tags
+- automated provider ejection scenario is executable via `tests/resilience/run_provider_ejection.py`
 
 ## Benchmark Snapshot
 
@@ -110,11 +111,11 @@ Interpretation:
 - no fully automated chaos suite executed yet
 - registry persistence currently uses local SQLite rather than managed database
 - node/process telemetry is implemented locally, but production deployments still need environment-specific hardening
-- response-side guardrails are implemented as sanitization in gateway, not yet a separate verdict service
+- broader automated chaos coverage beyond provider ejection is still incomplete
 
 ## Recommended Next Validation
 
 1. Run longer sustained load against `mock-1` and `research-model`.
 2. Execute provider failure drills while collecting latency and availability metrics.
-3. Add automated assertions around ejection and recovery timing.
+3. Extend automated assertions beyond provider ejection into multi-provider and longer-duration failure scenarios.
 4. Export dashboard screenshots and benchmark tables for final submission.
