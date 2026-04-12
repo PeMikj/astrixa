@@ -120,26 +120,46 @@ DEFAULT_PROVIDERS: dict[str, ProviderRecord] = {
 }
 
 
-def _maybe_add_aicohort_provider() -> None:
-    base_url = os.getenv("AICOHORT_BASE_URL")
-    api_key = os.getenv("AICOHORT_API_KEY")
-    model = os.getenv("AICOHORT_MODEL")
+def _maybe_add_openai_compatible_provider(
+    provider_id: str,
+    *,
+    base_url_env: str,
+    api_key_env: str,
+    model_env: str,
+    priority: int,
+) -> None:
+    base_url = os.getenv(base_url_env)
+    api_key = os.getenv(api_key_env)
+    model = os.getenv(model_env)
     if not base_url or not api_key or not model:
         return
 
-    DEFAULT_PROVIDERS["aicohort-research"] = ProviderRecord(
-        provider_id="aicohort-research",
+    DEFAULT_PROVIDERS[provider_id] = ProviderRecord(
+        provider_id=provider_id,
         type="openai-compatible",
         base_url=base_url,
         models=[model],
-        priority=80,
+        priority=priority,
         weight=1,
         auth_type="bearer",
-        api_key_env="AICOHORT_API_KEY",
+        api_key_env=api_key_env,
     )
 
 
-_maybe_add_aicohort_provider()
+_maybe_add_openai_compatible_provider(
+    "aicohort-research",
+    base_url_env="AICOHORT_BASE_URL",
+    api_key_env="AICOHORT_API_KEY",
+    model_env="AICOHORT_MODEL",
+    priority=80,
+)
+_maybe_add_openai_compatible_provider(
+    "mistral-primary",
+    base_url_env="MISTRAL_BASE_URL",
+    api_key_env="MISTRAL_API_KEY",
+    model_env="MISTRAL_MODEL",
+    priority=85,
+)
 PROVIDERS: dict[str, ProviderRecord] = {}
 
 
@@ -224,6 +244,10 @@ def _load_providers() -> dict[str, ProviderRecord]:
     loaded: dict[str, ProviderRecord] = {}
     for provider_id, record_json in rows:
         loaded[provider_id] = ProviderRecord.model_validate_json(record_json)
+    for provider_id, provider in DEFAULT_PROVIDERS.items():
+        if provider_id not in loaded:
+            loaded[provider_id] = provider
+            _save_provider(provider)
     return loaded
 
 

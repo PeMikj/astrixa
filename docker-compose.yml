@@ -17,6 +17,7 @@ services:
       AUTH_LAYER_URL: http://auth-layer:8080
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       AICOHORT_API_KEY: ${AICOHORT_API_KEY:-}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
       ASTRIXA_GATEWAY_TOKEN: ${ASTRIXA_GATEWAY_TOKEN:-}
     depends_on:
       auth-layer:
@@ -59,6 +60,9 @@ services:
       AICOHORT_BASE_URL: ${AICOHORT_BASE_URL:-}
       AICOHORT_API_KEY: ${AICOHORT_API_KEY:-}
       AICOHORT_MODEL: ${AICOHORT_MODEL:-}
+      MISTRAL_BASE_URL: ${MISTRAL_BASE_URL:-}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      MISTRAL_MODEL: ${MISTRAL_MODEL:-}
     volumes:
       - ./data/provider-registry:/data
     depends_on:

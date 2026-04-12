@@ -103,6 +103,7 @@ flowchart LR
 
 - Docker Compose deployment for all services.
 - Mock and optional real LLM providers.
+- Real-provider path currently validated with AI Cohort and designed to accept additional OpenAI-compatible providers such as Mistral through env-based registration.
 - Basic routing by model name and round robin / weighted routing.
 - Streaming passthrough.
 - OpenTelemetry instrumentation.
@@ -190,6 +191,7 @@ The product scope, architecture decisions, phased implementation, and success cr
 - routing strategy comparison: [docs/routing-strategy-comparison.md](/home/p/astrixa/docs/routing-strategy-comparison.md)
 - provider outage runbook: [docs/runbook-provider-outage.md](/home/p/astrixa/docs/runbook-provider-outage.md)
 - submission checklist: [docs/submission-checklist.md](/home/p/astrixa/docs/submission-checklist.md)
+- requirements coverage matrix: [docs/requirements-status.md](/home/p/astrixa/docs/requirements-status.md)
 
 ## Immediate Next Steps
 
