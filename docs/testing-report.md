@@ -17,6 +17,7 @@ This report summarizes the current verified behavior of the Astrixa stack in the
 - prompt-injection pattern blocks with `403`
 - obvious secret pattern blocks with `403`
 - guardrail policy version is returned in headers and body
+- response-side guardrails sanitize unsafe provider fields before client delivery
 
 ### Routing
 
@@ -53,6 +54,7 @@ Observed successful checks include:
 - secret-leak pattern returns `403`
 - `research-model` request succeeds through `aicohort-research`
 - response sanitization removes `reasoning` fields from provider responses
+- response guardrails now run through `guardrails-engine`, not only gateway-local sanitization
 - synthetic routing error feedback moves provider to `degraded`
 - synthetic routing success feedback restores provider to `healthy`
 - active health probes can restore an ejected mock provider back to `healthy`

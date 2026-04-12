@@ -154,6 +154,27 @@ async def _check_guardrails(payload: dict[str, Any]) -> dict[str, Any]:
         return response.json()
 
 
+async def _check_response_guardrails(
+    *,
+    provider_id: str,
+    body: Any,
+    stream: bool,
+    metadata: dict[str, Any],
+) -> dict[str, Any]:
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(
+            f"{GUARDRAILS_ENGINE_URL}/v1/guardrails/check-response",
+            json={
+                "provider_id": provider_id,
+                "body": body,
+                "stream": stream,
+                "metadata": metadata,
+            },
+        )
+        response.raise_for_status()
+        return response.json()
+
+
 async def _check_auth(authorization: str | None, agent_id: str | None) -> dict[str, Any]:
     async with httpx.AsyncClient(timeout=10.0) as client:
         response = await client.post(
@@ -183,20 +204,7 @@ def _provider_endpoint(base_url: str, api_path: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc, final_path, "", ""))
 
 
-def _sanitize_response_payload(value: Any) -> Any:
-    if isinstance(value, dict):
-        sanitized: dict[str, Any] = {}
-        for key, nested_value in value.items():
-            if key in {"reasoning", "reasoning_details"}:
-                continue
-            sanitized[key] = _sanitize_response_payload(nested_value)
-        return sanitized
-    if isinstance(value, list):
-        return [_sanitize_response_payload(item) for item in value]
-    return value
-
-
-def _sanitize_sse_chunk(raw_chunk: bytes) -> bytes:
+async def _sanitize_sse_chunk(raw_chunk: bytes, provider_id: str, request_id: str) -> bytes:
     try:
         text = raw_chunk.decode("utf-8")
     except UnicodeDecodeError:
@@ -218,7 +226,22 @@ def _sanitize_sse_chunk(raw_chunk: bytes) -> bytes:
         except json.JSONDecodeError:
             sanitized_parts.append(part)
             continue
-        sanitized_parts.append(f"data: {json.dumps(_sanitize_response_payload(parsed))}")
+        verdict = await _check_response_guardrails(
+            provider_id=provider_id,
+            body=parsed,
+            stream=True,
+            metadata={"request_id": request_id},
+        )
+        if verdict["decision"] == "block":
+            error_event = {
+                "error": {
+                    "type": "response_guardrail_block",
+                    "reason_code": verdict["reason_code"],
+                    "policy_version": verdict["policy_version"],
+                }
+            }
+            return f"data: {json.dumps(error_event)}\n\ndata: [DONE]\n\n".encode("utf-8")
+        sanitized_parts.append(f"data: {json.dumps(verdict['sanitized_body'])}")
 
     if not sanitized_parts:
         return raw_chunk
@@ -481,7 +504,7 @@ async def chat_completions(request: ChatCompletionRequest, raw_request: Request)
                             first_chunk_at = time.perf_counter()
                             TTFT_LATENCY.labels(provider_id=provider["provider_id"]).observe(first_chunk_at - started)
                         approx_output_tokens += max(chunk.count(b"content"), 1)
-                        yield _sanitize_sse_chunk(chunk)
+                        yield await _sanitize_sse_chunk(chunk, provider["provider_id"], request_id)
             total_latency = time.perf_counter() - started
             if first_chunk_at is None:
                 TTFT_LATENCY.labels(provider_id=provider["provider_id"]).observe(total_latency)
@@ -543,9 +566,48 @@ async def chat_completions(request: ChatCompletionRequest, raw_request: Request)
                 error_message=upstream.text,
             )
             raise HTTPException(status_code=upstream.status_code, detail=upstream.text)
-        payload = _sanitize_response_payload(upstream.json())
+        upstream_payload = upstream.json()
     total_latency = time.perf_counter() - started
     TTFT_LATENCY.labels(provider_id=provider["provider_id"]).observe(total_latency)
+    response_verdict = await _check_response_guardrails(
+        provider_id=provider["provider_id"],
+        body=upstream_payload,
+        stream=False,
+        metadata={"request_id": request_id},
+    )
+    if response_verdict["decision"] == "block":
+        await _log_mlflow_run(
+            request_id=request_id,
+            request_payload=request_payload,
+            provider=provider,
+            route=route,
+            auth_verdict=auth_verdict,
+            total_latency_seconds=total_latency,
+            outcome="error",
+            error_message=response_verdict["reason_code"],
+        )
+        return JSONResponse(
+            {
+                "error": {
+                    "type": "response_guardrail_block",
+                    "reason_code": response_verdict["reason_code"],
+                    "policy_version": response_verdict["policy_version"],
+                }
+            },
+            status_code=502,
+            headers={
+                "X-Astrixa-Auth-Decision": auth_verdict["decision"],
+                "X-Astrixa-Auth-Subject-Type": _header_value(auth_verdict.get("subject_type")),
+                "X-Astrixa-Provider": provider["provider_id"],
+                "X-Astrixa-Strategy": route["strategy"],
+                "X-Astrixa-Request-Id": request_id,
+                "X-Astrixa-Guardrails-Decision": verdict["decision"],
+                "X-Astrixa-Guardrails-Policy": verdict["policy_version"],
+                "X-Astrixa-Response-Guardrails-Decision": response_verdict["decision"],
+                "X-Astrixa-Response-Guardrails-Policy": response_verdict["policy_version"],
+            },
+        )
+    payload = response_verdict["sanitized_body"]
     _observe_usage_metrics(provider["provider_id"], payload, total_latency)
     await _report_provider_feedback(provider["provider_id"], total_latency, outcome)
     input_tokens, output_tokens, cost = _extract_usage_metrics(payload)
@@ -575,5 +637,7 @@ async def chat_completions(request: ChatCompletionRequest, raw_request: Request)
             "X-Astrixa-Request-Id": request_id,
             "X-Astrixa-Guardrails-Decision": verdict["decision"],
             "X-Astrixa-Guardrails-Policy": verdict["policy_version"],
+            "X-Astrixa-Response-Guardrails-Decision": response_verdict["decision"],
+            "X-Astrixa-Response-Guardrails-Policy": response_verdict["policy_version"],
         },
     )

@@ -47,7 +47,7 @@ Astrixa is designed to:
 - detect prompt-injection and obvious secret leakage patterns
 - emit structured allow/block verdicts
 - make guardrail outcomes visible in telemetry and governance artifacts
-- support future response-side sanitization, including suppression of unsafe reasoning leakage
+- enforce response-side guardrails through a dedicated verdict path, including suppression of unsafe reasoning leakage
 
 ## System Modules
 

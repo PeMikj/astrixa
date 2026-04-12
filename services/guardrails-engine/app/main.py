@@ -64,6 +64,21 @@ class GuardrailVerdict(BaseModel):
     policy_version: str = "guardrails.v1"
 
 
+class ResponseGuardrailRequest(BaseModel):
+    provider_id: str
+    body: Any
+    stream: bool = False
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ResponseGuardrailVerdict(BaseModel):
+    decision: Literal["allow", "sanitize", "block"]
+    reason_code: str
+    reasons: list[str] = Field(default_factory=list)
+    policy_version: str = "guardrails.v2.response"
+    sanitized_body: Any = None
+
+
 PROMPT_INJECTION_PATTERNS = [
     re.compile(r"ignore\s+previous\s+instructions", re.IGNORECASE),
     re.compile(r"disregard\s+all\s+prior\s+rules", re.IGNORECASE),
@@ -75,6 +90,8 @@ SECRET_LEAK_PATTERNS = [
     re.compile(r"rp-ak-[a-zA-Z0-9]+"),
     re.compile(r"api[_-]?key\s*[:=]\s*\S+", re.IGNORECASE),
 ]
+
+UNSAFE_RESPONSE_FIELDS = {"reasoning", "reasoning_details"}
 
 
 @app.middleware("http")
@@ -138,3 +155,64 @@ async def check_guardrails(payload: GuardrailRequest):
     VERDICT_COUNT.labels(decision=verdict.decision, reason_code=verdict.reason_code).inc()
     return verdict
 
+
+def _sanitize_response_value(value: Any, reasons: list[str]) -> Any:
+    if isinstance(value, dict):
+        sanitized: dict[str, Any] = {}
+        for key, nested_value in value.items():
+            if key in UNSAFE_RESPONSE_FIELDS:
+                reasons.append("unsafe_reasoning_field_removed")
+                continue
+            sanitized[key] = _sanitize_response_value(nested_value, reasons)
+        return sanitized
+    if isinstance(value, list):
+        return [_sanitize_response_value(item, reasons) for item in value]
+    if isinstance(value, str):
+        sanitized_text = value
+        for pattern in SECRET_LEAK_PATTERNS:
+            if pattern.search(sanitized_text):
+                sanitized_text = pattern.sub("[REDACTED]", sanitized_text)
+                reasons.append("secret_pattern_redacted")
+        return sanitized_text
+    return value
+
+
+def _contains_blockable_secret(value: Any) -> bool:
+    if isinstance(value, dict):
+        return any(_contains_blockable_secret(nested) for nested in value.values())
+    if isinstance(value, list):
+        return any(_contains_blockable_secret(item) for item in value)
+    if isinstance(value, str):
+        return any(pattern.search(value) for pattern in SECRET_LEAK_PATTERNS)
+    return False
+
+
+@app.post("/v1/guardrails/check-response", response_model=ResponseGuardrailVerdict)
+async def check_response_guardrails(payload: ResponseGuardrailRequest):
+    reasons: list[str] = []
+    sanitized_body = _sanitize_response_value(payload.body, reasons)
+
+    if sanitized_body != payload.body:
+        verdict = ResponseGuardrailVerdict(
+            decision="sanitize",
+            reason_code=reasons[0] if reasons else "response_sanitized",
+            reasons=sorted(set(reasons)),
+            sanitized_body=sanitized_body,
+        )
+    elif _contains_blockable_secret(payload.body):
+        verdict = ResponseGuardrailVerdict(
+            decision="block",
+            reason_code="response_secret_detected",
+            reasons=["response_secret_detected"],
+            sanitized_body=None,
+        )
+    else:
+        verdict = ResponseGuardrailVerdict(
+            decision="allow",
+            reason_code="ok",
+            reasons=[],
+            sanitized_body=payload.body,
+        )
+
+    VERDICT_COUNT.labels(decision=verdict.decision, reason_code=verdict.reason_code).inc()
+    return verdict

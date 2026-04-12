@@ -68,6 +68,7 @@ This document maps Astrixa against the assignment requirements and marks each it
 
 - `partial` extended CPU/node observability depth
 - `partial` sustained high-volume load and automated chaos coverage
+- `done` dedicated response-guardrails service verdict path
 
 ## Recommendation
 

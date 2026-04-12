@@ -88,6 +88,7 @@ Governance rule:
 ### Guardrails
 
 - all external prompts pass ingress guardrails
+- all model responses pass response guardrails before leaving the gateway
 - configurable deny/block/quarantine actions
 - support detection for prompt injection and secret leakage
 - failed guardrails produce auditable events
@@ -144,6 +145,7 @@ Advanced telemetry should also emit:
 - token counts
 - cost estimate
 - guardrail verdict
+- response-guardrail verdict
 
 ### Change Management
 
