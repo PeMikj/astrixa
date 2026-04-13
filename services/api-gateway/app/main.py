@@ -8,6 +8,10 @@ from typing import Any, AsyncIterator
 from collections import defaultdict, deque
 
 import httpx
+try:
+    from redis.asyncio import Redis
+except ImportError:  # pragma: no cover - fallback for local environments without redis extras installed yet
+    Redis = None
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from opentelemetry import trace
@@ -34,7 +38,9 @@ MAX_ACTIVE_REQUESTS = max(1, int(os.getenv("ASTRIXA_MAX_ACTIVE_REQUESTS", "200")
 DEFAULT_PROVIDER_MAX_CONCURRENCY = max(1, int(os.getenv("ASTRIXA_DEFAULT_PROVIDER_MAX_CONCURRENCY", "50")))
 DEFAULT_SUBJECT_RATE_LIMIT_RPM = max(1, int(os.getenv("ASTRIXA_DEFAULT_SUBJECT_RATE_LIMIT_RPM", "120")))
 PROVIDER_MAX_CONCURRENCY_JSON = os.getenv("ASTRIXA_PROVIDER_MAX_CONCURRENCY_JSON", "{}")
+REDIS_URL = os.getenv("ASTRIXA_RATE_LIMIT_REDIS_URL", "").strip()
 _MLFLOW_EXPERIMENT_ID: str | None = None
+_REDIS_CLIENT: Redis | None = None
 
 REQUEST_COUNT = Counter(
     "astrixa_gateway_requests_total",
@@ -104,6 +110,11 @@ RATE_LIMITED_REQUESTS = Counter(
     "astrixa_gateway_rate_limited_requests_total",
     "Gateway requests rejected by subject rate limiting",
     ["subject_type"],
+)
+ADMISSION_BACKEND = Gauge(
+    "astrixa_gateway_admission_backend_info",
+    "Admission backend mode, 1 for active backend",
+    ["backend"],
 )
 
 app = FastAPI(title="Astrixa API Gateway", version="1.0.0")
@@ -210,6 +221,90 @@ class _ActiveCapacityLimiter:
                 PROVIDER_ACTIVE_REQUESTS.labels(provider_id=provider_id).set(current)
 
 
+class _RedisCapacityLimiter:
+    def __init__(
+        self,
+        *,
+        redis_client: Redis,
+        global_limit: int,
+        default_provider_limit: int,
+        provider_limits: dict[str, int],
+        key_prefix: str = "astrixa:admission",
+    ) -> None:
+        self._redis = redis_client
+        self._global_limit = global_limit
+        self._default_provider_limit = default_provider_limit
+        self._provider_limits = provider_limits
+        self._key_prefix = key_prefix
+        self._ttl_seconds = 300
+        self._acquire_script = """
+local key = KEYS[1]
+local limit = tonumber(ARGV[1])
+local ttl = tonumber(ARGV[2])
+local value = redis.call('INCR', key)
+if value == 1 then
+  redis.call('EXPIRE', key, ttl)
+end
+if value > limit then
+  redis.call('DECR', key)
+  return {0, redis.call('GET', key) or '0'}
+end
+redis.call('EXPIRE', key, ttl)
+return {1, value}
+"""
+        self._release_script = """
+local key = KEYS[1]
+local ttl = tonumber(ARGV[1])
+local exists = redis.call('EXISTS', key)
+if exists == 0 then
+  return 0
+end
+local value = redis.call('DECR', key)
+if value <= 0 then
+  redis.call('DEL', key)
+  return 0
+end
+redis.call('EXPIRE', key, ttl)
+return value
+"""
+
+    def _provider_limit(self, provider_id: str) -> int:
+        return self._provider_limits.get(provider_id, self._default_provider_limit)
+
+    async def _acquire_counter(self, key: str, limit: int) -> tuple[bool, int]:
+        result = await self._redis.eval(self._acquire_script, 1, key, limit, self._ttl_seconds)
+        allowed = bool(int(result[0]))
+        current = int(result[1])
+        return allowed, current
+
+    async def _release_counter(self, key: str) -> int:
+        result = await self._redis.eval(self._release_script, 1, key, self._ttl_seconds)
+        return int(result)
+
+    async def acquire_global(self) -> _GatewayCapacityLease | None:
+        allowed, current = await self._acquire_counter(f"{self._key_prefix}:active:global", self._global_limit)
+        if not allowed:
+            ACTIVE_REQUESTS.set(current)
+            return None
+        ACTIVE_REQUESTS.set(current)
+        return _GatewayCapacityLease(self)
+
+    async def acquire_provider(self, provider_id: str) -> bool:
+        allowed, current = await self._acquire_counter(
+            f"{self._key_prefix}:active:provider:{provider_id}",
+            self._provider_limit(provider_id),
+        )
+        PROVIDER_ACTIVE_REQUESTS.labels(provider_id=provider_id).set(current)
+        return allowed
+
+    async def release(self, *, provider_id: str | None = None) -> None:
+        current_global = await self._release_counter(f"{self._key_prefix}:active:global")
+        ACTIVE_REQUESTS.set(current_global)
+        if provider_id is not None:
+            current_provider = await self._release_counter(f"{self._key_prefix}:active:provider:{provider_id}")
+            PROVIDER_ACTIVE_REQUESTS.labels(provider_id=provider_id).set(current_provider)
+
+
 class _SubjectRateLimiter:
     def __init__(self, *, requests_per_minute: int) -> None:
         self._requests_per_minute = requests_per_minute
@@ -231,12 +326,91 @@ class _SubjectRateLimiter:
             return (True, self._requests_per_minute, self._window_seconds)
 
 
-CAPACITY_LIMITER = _ActiveCapacityLimiter(
+class _RedisSubjectRateLimiter:
+    def __init__(
+        self,
+        *,
+        redis_client: Redis,
+        requests_per_minute: int,
+        key_prefix: str = "astrixa:ratelimit",
+    ) -> None:
+        self._redis = redis_client
+        self._requests_per_minute = requests_per_minute
+        self._window_seconds = 60
+        self._key_prefix = key_prefix
+        self._script = """
+local key = KEYS[1]
+local limit = tonumber(ARGV[1])
+local window = tonumber(ARGV[2])
+local value = redis.call('INCR', key)
+if value == 1 then
+  redis.call('EXPIRE', key, window)
+end
+local ttl = redis.call('TTL', key)
+if value > limit then
+  return {0, limit, ttl}
+end
+return {1, limit, ttl}
+"""
+
+    async def allow(self, subject_key: str) -> tuple[bool, int, float]:
+        allowed, limit, ttl = await self._redis.eval(
+            self._script,
+            1,
+            f"{self._key_prefix}:{subject_key}",
+            self._requests_per_minute,
+            self._window_seconds,
+        )
+        retry_after = max(1.0, float(ttl if int(ttl) > 0 else self._window_seconds))
+        return bool(int(allowed)), int(limit), retry_after
+
+
+CAPACITY_LIMITER: _ActiveCapacityLimiter | _RedisCapacityLimiter = _ActiveCapacityLimiter(
     global_limit=MAX_ACTIVE_REQUESTS,
     default_provider_limit=DEFAULT_PROVIDER_MAX_CONCURRENCY,
     provider_limits=PROVIDER_CONCURRENCY_LIMITS,
 )
-SUBJECT_RATE_LIMITER = _SubjectRateLimiter(requests_per_minute=DEFAULT_SUBJECT_RATE_LIMIT_RPM)
+SUBJECT_RATE_LIMITER: _SubjectRateLimiter | _RedisSubjectRateLimiter = _SubjectRateLimiter(
+    requests_per_minute=DEFAULT_SUBJECT_RATE_LIMIT_RPM
+)
+
+
+def _set_admission_backend_metric(backend: str) -> None:
+    for candidate in ("memory", "redis"):
+        ADMISSION_BACKEND.labels(backend=candidate).set(1 if candidate == backend else 0)
+
+
+@app.on_event("startup")
+async def startup_event() -> None:
+    global _REDIS_CLIENT, CAPACITY_LIMITER, SUBJECT_RATE_LIMITER
+    _set_admission_backend_metric("memory")
+    if not REDIS_URL or Redis is None:
+        return
+    try:
+        redis_client = Redis.from_url(REDIS_URL, encoding="utf-8", decode_responses=True)
+        await redis_client.ping()
+    except Exception:
+        return
+    _REDIS_CLIENT = redis_client
+    CAPACITY_LIMITER = _RedisCapacityLimiter(
+        redis_client=redis_client,
+        global_limit=MAX_ACTIVE_REQUESTS,
+        default_provider_limit=DEFAULT_PROVIDER_MAX_CONCURRENCY,
+        provider_limits=PROVIDER_CONCURRENCY_LIMITS,
+    )
+    SUBJECT_RATE_LIMITER = _RedisSubjectRateLimiter(
+        redis_client=redis_client,
+        requests_per_minute=DEFAULT_SUBJECT_RATE_LIMIT_RPM,
+    )
+    _set_admission_backend_metric("redis")
+
+
+@app.on_event("shutdown")
+async def shutdown_event() -> None:
+    global _REDIS_CLIENT
+    if _REDIS_CLIENT is not None:
+        await _REDIS_CLIENT.aclose()
+        _REDIS_CLIENT = None
 
 
 @app.middleware("http")

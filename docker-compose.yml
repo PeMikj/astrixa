@@ -22,6 +22,7 @@ services:
       ASTRIXA_DEFAULT_PROVIDER_MAX_CONCURRENCY: ${ASTRIXA_DEFAULT_PROVIDER_MAX_CONCURRENCY:-50}
       ASTRIXA_DEFAULT_SUBJECT_RATE_LIMIT_RPM: ${ASTRIXA_DEFAULT_SUBJECT_RATE_LIMIT_RPM:-120}
       ASTRIXA_PROVIDER_MAX_CONCURRENCY_JSON: ${ASTRIXA_PROVIDER_MAX_CONCURRENCY_JSON:-{}}
+      ASTRIXA_RATE_LIMIT_REDIS_URL: ${ASTRIXA_RATE_LIMIT_REDIS_URL:-redis://redis:6379/0}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       MLFLOW_TRACKING_URL: http://mlflow:5000
       MLFLOW_EXPERIMENT_NAME: Astrixa Gateway
@@ -40,6 +41,8 @@ services:
       mlflow:
         condition: service_healthy
       otel-collector:
+        condition: service_started
+      redis:
         condition: service_started
 
   routing-engine:
@@ -181,6 +184,10 @@ services:
       retries: 10
     volumes:
       - ./data/mlflow:/data
+
+  redis:
+    image: redis:7.4.2-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.121.0
