@@ -19,6 +19,7 @@ TOTAL_REQUESTS = 60
 CONCURRENCY = 8
 EJECTION_AFTER_SECONDS = 2.0
 RECOVERY_AFTER_SECONDS = 5.0
+MIN_SCENARIO_SECONDS = 6.5
 
 
 def _run_docker_exec(container: str, python_code: str) -> str:
@@ -208,9 +209,20 @@ def assert_condition(condition: bool, message: str) -> None:
         raise AssertionError(message)
 
 
+def ensure_provider_healthy(provider_id: str, timeout_seconds: float = 10.0) -> dict:
+    post_feedback(provider_id, "success")
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        state = get_provider(provider_id)
+        if state["health_status"] == "healthy" and state["ejected_until"] is None:
+            return state
+        time.sleep(0.25)
+    raise AssertionError(f"provider {provider_id} did not return to healthy before scenario start")
+
+
 def main() -> None:
     ensure_secondary_provider()
-    pre_state = get_provider(TARGET_PROVIDER_ID)
+    pre_state = ensure_provider_healthy(TARGET_PROVIDER_ID)
     assert_condition(pre_state["health_status"] == "healthy", "secondary provider was not healthy before scenario start")
 
     results: list[dict] = []
@@ -232,8 +244,10 @@ def main() -> None:
     next_index = 0
     with ThreadPoolExecutor(max_workers=CONCURRENCY) as executor:
         futures = set()
-        while next_index < TOTAL_REQUESTS or futures:
-            while next_index < TOTAL_REQUESTS and len(futures) < CONCURRENCY:
+        while next_index < TOTAL_REQUESTS or futures or (time.perf_counter() - started_at) < MIN_SCENARIO_SECONDS:
+            while len(futures) < CONCURRENCY and (
+                next_index < TOTAL_REQUESTS or (time.perf_counter() - started_at) < MIN_SCENARIO_SECONDS
+            ):
                 futures.add(executor.submit(gateway_request, next_index, started_at))
                 next_index += 1
             done, futures = wait(futures, return_when=FIRST_COMPLETED)

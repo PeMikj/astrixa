@@ -263,12 +263,17 @@ async def _probe_provider(provider: ProviderRecord) -> None:
             response.raise_for_status()
         HEALTH_CHECK_LATENCY.labels(provider_id=provider.provider_id).observe(time.perf_counter() - started)
         previous_status = provider.health_status
-        provider.health_status = "healthy"
-        provider.health_source = "probe"
-        provider.ejected_until = None
-        provider.consecutive_failures = 0
-        provider.last_error = None
         provider.last_check_at = now
+        # A successful probe confirms endpoint reachability, but must not
+        # override an active routing-driven cooldown window.
+        if provider.ejected_until is not None and provider.ejected_until > now and provider.health_source == "routing-feedback":
+            provider.health_status = "degraded"
+        else:
+            provider.health_status = "healthy"
+            provider.health_source = "probe"
+            provider.ejected_until = None
+            provider.consecutive_failures = 0
+            provider.last_error = None
         _save_provider(provider)
         if previous_status != provider.health_status:
             PROVIDER_HEALTH_STATE.labels(

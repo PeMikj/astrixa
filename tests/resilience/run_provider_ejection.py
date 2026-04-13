@@ -145,10 +145,21 @@ def assert_condition(condition: bool, message: str) -> None:
         raise AssertionError(message)
 
 
+def ensure_provider_healthy(provider_id: str, timeout_seconds: float = 10.0) -> dict:
+    post_feedback(provider_id, "success")
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        state = get_provider(provider_id)
+        if state["health_status"] == "healthy" and state["ejected_until"] is None:
+            return state
+        time.sleep(0.25)
+    raise AssertionError(f"provider {provider_id} did not return to healthy before test start")
+
+
 def main() -> None:
     report: dict[str, object] = {"provider_id": TARGET_PROVIDER_ID}
     ensure_secondary_provider()
-    before_state = get_provider(TARGET_PROVIDER_ID)
+    before_state = ensure_provider_healthy(TARGET_PROVIDER_ID)
     report["before"] = {
         "health_status": before_state["health_status"],
         "ejected_until": before_state["ejected_until"],
