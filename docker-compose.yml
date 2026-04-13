@@ -16,6 +16,7 @@ services:
       GUARDRAILS_ENGINE_URL: http://guardrails-engine:8080
       AUTH_LAYER_URL: http://auth-layer:8080
       ANONYMIZATION_ENGINE_URL: http://anonymization-engine:8080
+      ASTRIXA_DEFAULT_ANONYMIZATION_MODE: ${ASTRIXA_DEFAULT_ANONYMIZATION_MODE:-on}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       MLFLOW_TRACKING_URL: http://mlflow:5000
       MLFLOW_EXPERIMENT_NAME: Astrixa Gateway
@@ -141,6 +142,7 @@ services:
       retries: 5
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      ASTRIXA_DEFAULT_ANONYMIZATION_MODE: ${ASTRIXA_DEFAULT_ANONYMIZATION_MODE:-on}
     depends_on:
       otel-collector:
         condition: service_started

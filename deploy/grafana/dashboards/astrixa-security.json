@@ -154,11 +154,37 @@
       "id": 6,
       "targets": [
         {
-          "expr": "sum(increase(astrixa_gateway_policy_profile_requests_total{policy_profile=\"off\"}[15m]))",
+          "expr": "sum by (anonymization_mode) (rate(astrixa_gateway_anonymization_mode_requests_total[5m]))",
           "refId": "A"
         }
       ],
-      "title": "Policy Off Requests Last 15m",
+      "title": "Anonymization Mode Usage",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "id": 7,
+      "targets": [
+        {
+          "expr": "sum(increase(astrixa_gateway_anonymization_mode_requests_total{anonymization_mode=\"off\"}[15m]))",
+          "refId": "A"
+        }
+      ],
+      "title": "Anonymization Off Requests Last 15m",
       "type": "timeseries"
     }
   ],

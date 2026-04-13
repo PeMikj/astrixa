@@ -31,6 +31,16 @@ groups:
           summary: "Astrixa is receiving policy_profile=off traffic"
           description: "Requests are bypassing policy-controlled security behavior more often than expected."
 
+      - alert: AstrixaAnonymizationOffTraffic
+        expr: sum(rate(astrixa_gateway_anonymization_mode_requests_total{anonymization_mode="off"}[10m])) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+          service: api-gateway
+        annotations:
+          summary: "Astrixa is receiving anonymization_mode=off traffic"
+          description: "Requests are explicitly bypassing request masking and should be reviewed."
+
   - name: astrixa-guardrails
     rules:
       - alert: AstrixaGuardrailBlocksSpike

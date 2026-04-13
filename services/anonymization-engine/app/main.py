@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 
 OTEL_EXPORTER_OTLP_ENDPOINT = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4317")
+DEFAULT_ANONYMIZATION_MODE = os.getenv("ASTRIXA_DEFAULT_ANONYMIZATION_MODE", "on").lower()
 
 REQUEST_COUNT = Counter(
     "astrixa_anonymization_requests_total",
@@ -74,6 +75,7 @@ class AnonymizeRequest(BaseModel):
 class AnonymizeResponse(BaseModel):
     decision: str = "anonymize"
     policy_version: str = "anonymization.v1"
+    anonymization_mode: str = "on"
     sanitized_messages: list[Message]
     replacements: list[Replacement] = Field(default_factory=list)
     entity_counts: dict[str, int] = Field(default_factory=dict)
@@ -142,6 +144,33 @@ def _token(entity_type: str, index: int) -> str:
     return f"__ASTRIXA_{entity_type}_{index:03d}__"
 
 
+def _resolve_anonymization_mode(metadata: dict[str, Any]) -> str:
+    mode = str(metadata.get("anonymization_mode") or DEFAULT_ANONYMIZATION_MODE).lower()
+    return "off" if mode == "off" else "on"
+
+
+def _parse_entity_set(raw_value: Any) -> set[str]:
+    if raw_value is None:
+        return set()
+    if isinstance(raw_value, str):
+        return {item.strip().upper() for item in raw_value.split(",") if item.strip()}
+    if isinstance(raw_value, (list, tuple, set)):
+        return {str(item).strip().upper() for item in raw_value if str(item).strip()}
+    return set()
+
+
+def _resolve_entity_filters(metadata: dict[str, Any]) -> tuple[set[str] | None, set[str]]:
+    include = _parse_entity_set(metadata.get("anonymization_entities_include"))
+    exclude = _parse_entity_set(metadata.get("anonymization_entities_exclude"))
+    return (include or None, exclude)
+
+
+def _entity_enabled(entity_type: str, include: set[str] | None, exclude: set[str]) -> bool:
+    if include is not None and entity_type not in include:
+        return False
+    return entity_type not in exclude
+
+
 def _apply_replacement(
     text: str,
     original: str,
@@ -169,10 +198,18 @@ def _apply_replacement(
     return text.replace(original, token)
 
 
-def _replace_text(text: str, replacements: list[Replacement], counters: dict[str, int]) -> str:
+def _replace_text(
+    text: str,
+    replacements: list[Replacement],
+    counters: dict[str, int],
+    include_entities: set[str] | None,
+    exclude_entities: set[str],
+) -> str:
     updated = text
 
     for entity_type, mode, pattern in DETERMINISTIC_PATTERNS:
+        if not _entity_enabled(entity_type, include_entities, exclude_entities):
+            continue
         for match in list(pattern.finditer(updated)):
             updated = _apply_replacement(updated, match.group(0), entity_type, mode, replacements, counters)
 
@@ -196,24 +233,45 @@ def _replace_text(text: str, replacements: list[Replacement], counters: dict[str
             reverse=True,
         )
         for original, entity_type in spans:
+            if not _entity_enabled(entity_type, include_entities, exclude_entities):
+                continue
             updated = _apply_replacement(updated, original, entity_type, "spacy-ner", replacements, counters)
 
     for entity_type, mode, pattern in HEURISTIC_NER_PATTERNS:
+        if not _entity_enabled(entity_type, include_entities, exclude_entities):
+            continue
         for match in list(pattern.finditer(updated)):
             updated = _apply_replacement(updated, match.group(0), entity_type, mode, replacements, counters)
 
     return updated
 
 
-def _restore_value(value: Any, replacements: list[Replacement], policy_profile: str) -> Any:
+def _restore_value(
+    value: Any,
+    replacements: list[Replacement],
+    policy_profile: str,
+    restore_include: set[str] | None,
+    restore_exclude: set[str],
+) -> Any:
     if isinstance(value, dict):
-        return {key: _restore_value(nested_value, replacements, policy_profile) for key, nested_value in value.items()}
+        return {
+            key: _restore_value(nested_value, replacements, policy_profile, restore_include, restore_exclude)
+            for key, nested_value in value.items()
+        }
     if isinstance(value, list):
-        return [_restore_value(item, replacements, policy_profile) for item in value]
+        return [_restore_value(item, replacements, policy_profile, restore_include, restore_exclude) for item in value]
     if isinstance(value, str):
         restored = value
         for replacement in replacements:
-            if policy_profile == "strict" and replacement.entity_type in STRICT_NO_RESTORE_TYPES:
+            entity_type = replacement.entity_type.upper()
+            should_restore = True
+            if restore_include is not None and entity_type not in restore_include:
+                should_restore = False
+            if entity_type in restore_exclude:
+                should_restore = False
+            if policy_profile == "strict" and entity_type in STRICT_NO_RESTORE_TYPES:
+                should_restore = False
+            if not should_restore:
                 restored = restored.replace(replacement.token, f"[REDACTED_{replacement.entity_type}]")
                 continue
             restored = restored.replace(replacement.token, replacement.original)
@@ -223,20 +281,26 @@ def _restore_value(value: Any, replacements: list[Replacement], policy_profile: 
 
 @app.post("/v1/anonymize", response_model=AnonymizeResponse)
 async def anonymize(payload: AnonymizeRequest):
-    policy_profile = str(payload.metadata.get("policy_profile") or "balanced").lower()
-    if policy_profile == "off":
+    anonymization_mode = _resolve_anonymization_mode(payload.metadata)
+    if anonymization_mode == "off":
         return AnonymizeResponse(
             decision="bypass",
             policy_version="anonymization.v1.off",
+            anonymization_mode="off",
             sanitized_messages=payload.messages,
             replacements=[],
             entity_counts={},
         )
 
+    policy_profile = str(payload.metadata.get("policy_profile") or "balanced").lower()
+    include_entities, exclude_entities = _resolve_entity_filters(payload.metadata)
     replacements: list[Replacement] = []
     counters: dict[str, int] = {}
     sanitized_messages = [
-        Message(role=message.role, content=_replace_text(message.content, replacements, counters))
+        Message(
+            role=message.role,
+            content=_replace_text(message.content, replacements, counters, include_entities, exclude_entities),
+        )
         for message in payload.messages
     ]
     entity_counts: dict[str, int] = {}
@@ -247,13 +311,22 @@ async def anonymize(payload: AnonymizeRequest):
         replacements=replacements,
         entity_counts=entity_counts,
         policy_version=f"anonymization.v1.{policy_profile}",
+        anonymization_mode="on",
     )
 
 
 @app.post("/v1/deanonymize", response_model=DeanonymizeResponse)
 async def deanonymize(payload: DeanonymizeRequest):
     policy_profile = str(payload.metadata.get("policy_profile") or "balanced").lower()
-    restored_body = _restore_value(payload.body, payload.replacements, policy_profile)
+    restore_include = _parse_entity_set(payload.metadata.get("anonymization_restore_include"))
+    restore_exclude = _parse_entity_set(payload.metadata.get("anonymization_restore_exclude"))
+    restored_body = _restore_value(
+        payload.body,
+        payload.replacements,
+        policy_profile,
+        restore_include or None,
+        restore_exclude,
+    )
     return DeanonymizeResponse(
         restored_body=restored_body,
         replacement_count=len(payload.replacements),

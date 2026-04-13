@@ -33,7 +33,8 @@ client -> api-gateway -> auth-layer -> guardrails-engine -> anonymization-engine
 - provider ejection and recovery
 - ingress and response guardrails
 - local anonymization with regex + spaCy NER
-- policy profiles: `strict`, `balanced`, `off`
+- independent `policy_profile` and `anonymization_mode`
+- anonymization controls: `on` / `off`, entity include/exclude, restore include/exclude
 - agent-scoped policy inheritance
 - TTFT, TPOT, token, cost, auth, guardrail, and anonymization metrics
 - Prometheus alerting and Grafana dashboards
