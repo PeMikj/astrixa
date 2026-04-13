@@ -10,7 +10,7 @@ This document describes how to run Astrixa locally with Docker Compose and what 
 
 - Docker Engine with Compose support
 - free local ports:
-  - `18080` for `api-gateway`
+  - `18080` for `gateway-proxy`
   - `8082` for `agent-registry`
   - `8090` for `mock-llm`
   - `3000` for Grafana
@@ -33,12 +33,31 @@ Current important keys:
 - `MISTRAL_BASE_URL`
 - `MISTRAL_API_KEY`
 - `MISTRAL_MODEL`
+- `ASTRIXA_MAX_ACTIVE_REQUESTS`
+- `ASTRIXA_DEFAULT_PROVIDER_MAX_CONCURRENCY`
+- `ASTRIXA_DEFAULT_SUBJECT_RATE_LIMIT_RPM`
+- `ASTRIXA_PROVIDER_MAX_CONCURRENCY_JSON`
+- `ASTRIXA_RATE_LIMIT_REDIS_URL`
 
 ### Start
 
 ```bash
 docker compose up -d --build
 ```
+
+### Multi-Replica Gateway
+
+To run Astrixa with two gateway replicas behind the local proxy:
+
+```bash
+docker compose up -d --build --scale api-gateway=2 gateway-proxy
+```
+
+In this mode:
+
+- `gateway-proxy` exposes `http://127.0.0.1:18080`
+- requests are distributed across `api-gateway` replicas
+- gateway admission and rate-limit state is shared through Redis
 
 ### Verify
 
@@ -116,5 +135,7 @@ curl -sS -X POST http://127.0.0.1:18080/v1/chat/completions \
 - replace local `.env` secret handling with an external secret store
 - move from local bind volumes to managed persistent volumes
 - front the gateway with managed ingress and TLS
+- replace local `gateway-proxy` with managed L4/L7 ingress or service mesh
+- keep admission and rate-limit state in shared Redis or equivalent distributed store
 - use a real database for provider and agent control-plane state
 - add alerting rules and on-call destinations before production traffic

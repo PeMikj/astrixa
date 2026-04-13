@@ -43,6 +43,7 @@ This report summarizes the current verified behavior of the Astrixa stack in the
 - Prometheus scrapes service metrics
 - Grafana dashboard assets are provisioned
 - gateway exposes TTFT, TPOT, token, and cost metrics
+- gateway exposes admission-control and rejection metrics
 - provider-registry exposes health-probe metrics
 - Prometheus scrapes host CPU metrics through `node-exporter`
 - Prometheus derives service CPU usage from `process_cpu_seconds_total`
@@ -80,6 +81,9 @@ Observed successful checks include:
 - automated provider ejection scenario is executable via `tests/resilience/run_provider_ejection.py`
 - mixed load plus timed provider ejection is executable via `tests/resilience/run_mixed_load_resilience.py`
 - aggregate suite is executable via `tests/run_submission_suite.py` and writes JSON/Markdown artifacts to `tests/artifacts/`
+- Redis-backed admission backend was verified through gateway metrics
+- proxy-fronted multi-replica gateway deployment was verified with two live gateway replicas behind `gateway-proxy`
+- requests through `gateway-proxy` were observed on both gateway replicas via `X-Astrixa-Gateway-Instance`
 
 ## Benchmark Snapshot
 
@@ -121,6 +125,26 @@ Interpretation:
 - service remained available during provider health state changes
 - mock provider recovery was observed quickly due to active probe loop
 - this run validates continuity, not a worst-case outage benchmark
+
+## Multi-Replica Verification
+
+Scenario:
+
+- `docker compose up -d --build --scale api-gateway=2 gateway-proxy`
+- `gateway-proxy` bound to `127.0.0.1:18080`
+- shared Redis-backed admission state enabled
+
+Observed result:
+
+- both `api-gateway` replicas reached healthy state
+- requests through `gateway-proxy` returned alternating `X-Astrixa-Gateway-Instance` values
+- instance ids matched the hostnames of `astrixa-api-gateway-1` and `astrixa-api-gateway-2`
+- both replicas exposed `astrixa_gateway_admission_backend_info{backend="redis"} 1`
+
+Interpretation:
+
+- traffic was actually distributed across multiple gateway replicas
+- admission and rate-limit state was shared across replicas instead of staying per-instance
 
 ## Current Gaps
 

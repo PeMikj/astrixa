@@ -5,6 +5,7 @@ Astrixa is a containerized multi-provider LLM gateway with agent/provider regist
 ## Components
 
 - `api-gateway`: public entrypoint for chat/completions traffic
+- `gateway-proxy`: proxy frontend for multi-replica gateway deployment
 - `routing-engine`: provider selection and feedback handling
 - `provider-registry`: provider metadata, pricing, limits, health state
 - `agent-registry`: A2A agent records and auth metadata
@@ -12,14 +13,15 @@ Astrixa is a containerized multi-provider LLM gateway with agent/provider regist
 - `anonymization-engine`: local masking and de-anonymization
 - `auth-layer`: bearer token validation and agent-scoped auth
 - `provider-adapters/mock-llm`: local mock provider
+- `redis`: shared admission and rate-limit state
 - `mlflow`: run tracking
 - `prometheus`, `grafana`, `otel-collector`, `node-exporter`: observability stack
 
 ## Request Path
 
 ```text
-client -> api-gateway -> auth-layer -> guardrails-engine -> anonymization-engine
-       -> routing-engine -> provider
+client -> gateway-proxy -> api-gateway -> auth-layer -> guardrails-engine
+       -> anonymization-engine -> routing-engine -> provider
        -> response guardrails -> de-anonymization -> client
 ```
 
@@ -37,6 +39,9 @@ client -> api-gateway -> auth-layer -> guardrails-engine -> anonymization-engine
 - anonymization profiles: `none`, `secrets-only`, `pii-lite`, `pii-strict`, `outreach`
 - anonymization controls: `on` / `off`, entity include/exclude, restore include/exclude
 - agent-scoped policy inheritance
+- admission control with global and per-provider concurrency limits
+- Redis-backed shared admission and rate-limit state
+- proxy-fronted multi-replica gateway deployment
 - TTFT, TPOT, token, cost, auth, guardrail, and anonymization metrics
 - Prometheus alerting and Grafana dashboards
 
@@ -44,7 +49,8 @@ client -> api-gateway -> auth-layer -> guardrails-engine -> anonymization-engine
 
 ```mermaid
 flowchart LR
-    Client[Client / Agent] --> GW[API Gateway]
+    Client[Client / Agent] --> PX[Gateway Proxy]
+    PX --> GW[API Gateway Replicas]
     GW --> AUTH[Auth Layer]
     AUTH --> GR[Guardrails Engine]
     GR --> ANON[Anonymization Engine]
@@ -58,6 +64,7 @@ flowchart LR
     GR --> OTEL
     ANON --> OTEL
     AUTH --> OTEL
+    GW --> REDIS[Redis]
     OTEL --> PROM[Prometheus]
     OTEL --> GRAF[Grafana]
     OTEL --> MLF[MLflow]
