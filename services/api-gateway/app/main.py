@@ -39,6 +39,7 @@ DEFAULT_PROVIDER_MAX_CONCURRENCY = max(1, int(os.getenv("ASTRIXA_DEFAULT_PROVIDE
 DEFAULT_SUBJECT_RATE_LIMIT_RPM = max(1, int(os.getenv("ASTRIXA_DEFAULT_SUBJECT_RATE_LIMIT_RPM", "120")))
 PROVIDER_MAX_CONCURRENCY_JSON = os.getenv("ASTRIXA_PROVIDER_MAX_CONCURRENCY_JSON", "{}")
 REDIS_URL = os.getenv("ASTRIXA_RATE_LIMIT_REDIS_URL", "").strip()
+GATEWAY_INSTANCE_ID = os.getenv("ASTRIXA_GATEWAY_INSTANCE_ID") or os.getenv("HOSTNAME", "unknown")
 _MLFLOW_EXPERIMENT_ID: str | None = None
 _REDIS_CLIENT: Redis | None = None
 
@@ -651,6 +652,7 @@ def _rejection_response(
     headers = {
         "X-Astrixa-Auth-Decision": _header_value(auth_verdict.get("decision"), "unknown"),
         "X-Astrixa-Auth-Subject-Type": _header_value(auth_verdict.get("subject_type")),
+        "X-Astrixa-Gateway-Instance": GATEWAY_INSTANCE_ID,
     }
     if extra_headers:
         headers.update(extra_headers)
@@ -1014,6 +1016,7 @@ async def chat_completions(request: ChatCompletionRequest, raw_request: Request)
             headers = {
                 "X-Astrixa-Auth-Decision": auth_verdict["decision"],
                 "X-Astrixa-Auth-Subject-Type": _header_value(auth_verdict.get("subject_type")),
+                "X-Astrixa-Gateway-Instance": GATEWAY_INSTANCE_ID,
                 "X-Astrixa-Provider": provider["provider_id"],
                 "X-Astrixa-Strategy": route["strategy"],
                 "X-Astrixa-Request-Id": request_id,
@@ -1092,6 +1095,7 @@ async def chat_completions(request: ChatCompletionRequest, raw_request: Request)
                 headers={
                     "X-Astrixa-Auth-Decision": auth_verdict["decision"],
                     "X-Astrixa-Auth-Subject-Type": _header_value(auth_verdict.get("subject_type")),
+                    "X-Astrixa-Gateway-Instance": GATEWAY_INSTANCE_ID,
                     "X-Astrixa-Provider": provider["provider_id"],
                     "X-Astrixa-Strategy": route["strategy"],
                     "X-Astrixa-Request-Id": request_id,
@@ -1135,6 +1139,7 @@ async def chat_completions(request: ChatCompletionRequest, raw_request: Request)
             headers={
                 "X-Astrixa-Auth-Decision": auth_verdict["decision"],
                 "X-Astrixa-Auth-Subject-Type": _header_value(auth_verdict.get("subject_type")),
+                "X-Astrixa-Gateway-Instance": GATEWAY_INSTANCE_ID,
                 "X-Astrixa-Provider": provider["provider_id"],
                 "X-Astrixa-Strategy": route["strategy"],
                 "X-Astrixa-Request-Id": request_id,

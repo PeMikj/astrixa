@@ -4,8 +4,6 @@ services:
   api-gateway:
     build:
       context: ./services/api-gateway
-    ports:
-      - "18080:8080"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz')"]
       interval: 10s
@@ -43,6 +41,16 @@ services:
       otel-collector:
         condition: service_started
       redis:
+        condition: service_started
+
+  gateway-proxy:
+    image: haproxy:3.0-alpine
+    ports:
+      - "18080:8080"
+    volumes:
+      - ./deploy/compose/haproxy-gateway.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      api-gateway:
         condition: service_started
 
   routing-engine:
