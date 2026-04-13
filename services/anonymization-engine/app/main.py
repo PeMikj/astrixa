@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 
 OTEL_EXPORTER_OTLP_ENDPOINT = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4317")
 DEFAULT_ANONYMIZATION_MODE = os.getenv("ASTRIXA_DEFAULT_ANONYMIZATION_MODE", "on").lower()
+DEFAULT_ANONYMIZATION_PROFILE = os.getenv("ASTRIXA_DEFAULT_ANONYMIZATION_PROFILE", "pii-lite").lower()
 
 REQUEST_COUNT = Counter(
     "astrixa_anonymization_requests_total",
@@ -76,6 +77,7 @@ class AnonymizeResponse(BaseModel):
     decision: str = "anonymize"
     policy_version: str = "anonymization.v1"
     anonymization_mode: str = "on"
+    anonymization_profile: str = "pii-lite"
     sanitized_messages: list[Message]
     replacements: list[Replacement] = Field(default_factory=list)
     entity_counts: dict[str, int] = Field(default_factory=dict)
@@ -108,6 +110,43 @@ HEURISTIC_NER_PATTERNS: list[tuple[str, str, re.Pattern[str]]] = [
 ]
 
 STRICT_NO_RESTORE_TYPES = {"EMAIL", "PHONE", "API_KEY", "CARD", "SSN"}
+ANONYMIZATION_PROFILES: dict[str, dict[str, set[str] | str]] = {
+    "none": {
+        "mode": "off",
+        "include": set(),
+        "exclude": set(),
+        "restore_include": set(),
+        "restore_exclude": set(),
+    },
+    "secrets-only": {
+        "mode": "on",
+        "include": {"API_KEY", "CARD", "SSN"},
+        "exclude": set(),
+        "restore_include": set(),
+        "restore_exclude": {"API_KEY", "CARD", "SSN"},
+    },
+    "pii-lite": {
+        "mode": "on",
+        "include": {"EMAIL", "PHONE", "PERSON", "LOCATION"},
+        "exclude": set(),
+        "restore_include": set(),
+        "restore_exclude": set(),
+    },
+    "pii-strict": {
+        "mode": "on",
+        "include": {"EMAIL", "PHONE", "PERSON", "ORG", "LOCATION", "ADDRESS", "API_KEY", "CARD", "SSN"},
+        "exclude": set(),
+        "restore_include": set(),
+        "restore_exclude": {"EMAIL", "PHONE", "ADDRESS", "API_KEY", "CARD", "SSN"},
+    },
+    "outreach": {
+        "mode": "on",
+        "include": {"PERSON", "ORG", "EMAIL", "PHONE"},
+        "exclude": set(),
+        "restore_include": set(),
+        "restore_exclude": {"EMAIL", "PHONE"},
+    },
+}
 
 
 @app.middleware("http")
@@ -149,6 +188,11 @@ def _resolve_anonymization_mode(metadata: dict[str, Any]) -> str:
     return "off" if mode == "off" else "on"
 
 
+def _resolve_anonymization_profile(metadata: dict[str, Any]) -> str:
+    profile = str(metadata.get("anonymization_profile") or DEFAULT_ANONYMIZATION_PROFILE).lower()
+    return profile if profile in ANONYMIZATION_PROFILES else DEFAULT_ANONYMIZATION_PROFILE
+
+
 def _parse_entity_set(raw_value: Any) -> set[str]:
     if raw_value is None:
         return set()
@@ -163,6 +207,36 @@ def _resolve_entity_filters(metadata: dict[str, Any]) -> tuple[set[str] | None, 
     include = _parse_entity_set(metadata.get("anonymization_entities_include"))
     exclude = _parse_entity_set(metadata.get("anonymization_entities_exclude"))
     return (include or None, exclude)
+
+
+def _resolve_restore_filters(metadata: dict[str, Any]) -> tuple[set[str] | None, set[str]]:
+    restore_include = _parse_entity_set(metadata.get("anonymization_restore_include"))
+    restore_exclude = _parse_entity_set(metadata.get("anonymization_restore_exclude"))
+    return (restore_include or None, restore_exclude)
+
+
+def _effective_anonymization_config(metadata: dict[str, Any]) -> dict[str, Any]:
+    profile_name = _resolve_anonymization_profile(metadata)
+    profile = ANONYMIZATION_PROFILES[profile_name]
+
+    explicit_mode = metadata.get("anonymization_mode")
+    mode = (
+        "off"
+        if str(explicit_mode).lower() == "off"
+        else ("on" if explicit_mode is not None else str(profile["mode"]))
+    )
+
+    include, exclude = _resolve_entity_filters(metadata)
+    restore_include, restore_exclude = _resolve_restore_filters(metadata)
+
+    return {
+        "profile": profile_name,
+        "mode": mode,
+        "include": include if include is not None else (set(profile["include"]) or None),
+        "exclude": exclude if exclude else set(profile["exclude"]),
+        "restore_include": restore_include if restore_include is not None else (set(profile["restore_include"]) or None),
+        "restore_exclude": restore_exclude if restore_exclude else set(profile["restore_exclude"]),
+    }
 
 
 def _entity_enabled(entity_type: str, include: set[str] | None, exclude: set[str]) -> bool:
@@ -281,25 +355,26 @@ def _restore_value(
 
 @app.post("/v1/anonymize", response_model=AnonymizeResponse)
 async def anonymize(payload: AnonymizeRequest):
-    anonymization_mode = _resolve_anonymization_mode(payload.metadata)
+    config = _effective_anonymization_config(payload.metadata)
+    anonymization_mode = config["mode"]
     if anonymization_mode == "off":
         return AnonymizeResponse(
             decision="bypass",
             policy_version="anonymization.v1.off",
             anonymization_mode="off",
+            anonymization_profile=config["profile"],
             sanitized_messages=payload.messages,
             replacements=[],
             entity_counts={},
         )
 
     policy_profile = str(payload.metadata.get("policy_profile") or "balanced").lower()
-    include_entities, exclude_entities = _resolve_entity_filters(payload.metadata)
     replacements: list[Replacement] = []
     counters: dict[str, int] = {}
     sanitized_messages = [
         Message(
             role=message.role,
-            content=_replace_text(message.content, replacements, counters, include_entities, exclude_entities),
+            content=_replace_text(message.content, replacements, counters, config["include"], config["exclude"]),
         )
         for message in payload.messages
     ]
@@ -312,20 +387,20 @@ async def anonymize(payload: AnonymizeRequest):
         entity_counts=entity_counts,
         policy_version=f"anonymization.v1.{policy_profile}",
         anonymization_mode="on",
+        anonymization_profile=config["profile"],
     )
 
 
 @app.post("/v1/deanonymize", response_model=DeanonymizeResponse)
 async def deanonymize(payload: DeanonymizeRequest):
+    config = _effective_anonymization_config(payload.metadata)
     policy_profile = str(payload.metadata.get("policy_profile") or "balanced").lower()
-    restore_include = _parse_entity_set(payload.metadata.get("anonymization_restore_include"))
-    restore_exclude = _parse_entity_set(payload.metadata.get("anonymization_restore_exclude"))
     restored_body = _restore_value(
         payload.body,
         payload.replacements,
         policy_profile,
-        restore_include or None,
-        restore_exclude,
+        config["restore_include"],
+        config["restore_exclude"],
     )
     return DeanonymizeResponse(
         restored_body=restored_body,

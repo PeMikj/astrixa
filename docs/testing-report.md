@@ -71,6 +71,7 @@ Observed successful checks include:
 - agent-scoped `policy_profile` inheritance was verified with `persistence-agent` and applied without a manual policy header
 - `anonymization_mode=off` was verified independently from `policy_profile` and left guardrails active
 - request-scoped anonymization controls were verified through include/exclude and restore-exclude behavior
+- anonymization profiles can now provide workflow defaults, with request headers still taking precedence
 - synthetic routing error feedback moves provider to `degraded`
 - synthetic routing success feedback restores provider to `healthy`
 - active health probes can restore an ejected mock provider back to `healthy`

@@ -17,6 +17,7 @@ services:
       AUTH_LAYER_URL: http://auth-layer:8080
       ANONYMIZATION_ENGINE_URL: http://anonymization-engine:8080
       ASTRIXA_DEFAULT_ANONYMIZATION_MODE: ${ASTRIXA_DEFAULT_ANONYMIZATION_MODE:-on}
+      ASTRIXA_DEFAULT_ANONYMIZATION_PROFILE: ${ASTRIXA_DEFAULT_ANONYMIZATION_PROFILE:-pii-lite}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       MLFLOW_TRACKING_URL: http://mlflow:5000
       MLFLOW_EXPERIMENT_NAME: Astrixa Gateway
@@ -143,6 +144,7 @@ services:
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       ASTRIXA_DEFAULT_ANONYMIZATION_MODE: ${ASTRIXA_DEFAULT_ANONYMIZATION_MODE:-on}
+      ASTRIXA_DEFAULT_ANONYMIZATION_PROFILE: ${ASTRIXA_DEFAULT_ANONYMIZATION_PROFILE:-pii-lite}
     depends_on:
       otel-collector:
         condition: service_started

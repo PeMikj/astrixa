@@ -54,6 +54,7 @@ class AgentRecord(BaseModel):
     version: str = "0.1.0"
     supported_methods: list[str] = Field(default_factory=list)
     policy_profile: str = "balanced"
+    anonymization_profile: str = "pii-lite"
     auth: AgentAuth = Field(default_factory=AgentAuth)
 
 
@@ -64,6 +65,7 @@ class AgentPatch(BaseModel):
     version: str | None = None
     supported_methods: list[str] | None = None
     policy_profile: str | None = None
+    anonymization_profile: str | None = None
     auth: AgentAuth | None = None
 
 

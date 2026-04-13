@@ -63,6 +63,7 @@ class AuthVerdict(BaseModel):
     subject_type: Literal["client", "agent", "service"] | None = None
     scopes: list[str] = Field(default_factory=list)
     policy_profile: str = "balanced"
+    anonymization_profile: str = "pii-lite"
 
 
 def _load_static_tokens() -> dict[str, dict]:
@@ -72,6 +73,7 @@ def _load_static_tokens() -> dict[str, dict]:
             "subject_type": "client",
             "scopes": ["llm:invoke"],
             "policy_profile": "balanced",
+            "anonymization_profile": "pii-lite",
         }
     }
     if not STATIC_TOKENS_JSON.strip():
@@ -118,6 +120,7 @@ async def _validate_agent_token(token: str, agent_id: str, required_scope: str) 
         subject_type="agent",
         scopes=allowed_scopes,
         policy_profile=str(agent.get("policy_profile") or "balanced"),
+        anonymization_profile=str(agent.get("anonymization_profile") or "pii-lite"),
     )
 
 
@@ -172,6 +175,7 @@ async def validate_auth(payload: AuthRequest):
                     subject_type=static_token.get("subject_type", "client"),
                     scopes=scopes,
                     policy_profile=str(static_token.get("policy_profile") or "balanced"),
+                    anonymization_profile=str(static_token.get("anonymization_profile") or "pii-lite"),
                 )
         elif payload.agent_id:
             verdict = await _validate_agent_token(token, payload.agent_id, payload.required_scope)

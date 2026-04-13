@@ -34,6 +34,7 @@ client -> api-gateway -> auth-layer -> guardrails-engine -> anonymization-engine
 - ingress and response guardrails
 - local anonymization with regex + spaCy NER
 - independent `policy_profile` and `anonymization_mode`
+- anonymization profiles: `none`, `secrets-only`, `pii-lite`, `pii-strict`, `outreach`
 - anonymization controls: `on` / `off`, entity include/exclude, restore include/exclude
 - agent-scoped policy inheritance
 - TTFT, TPOT, token, cost, auth, guardrail, and anonymization metrics

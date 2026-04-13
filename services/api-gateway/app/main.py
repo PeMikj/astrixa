@@ -27,6 +27,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://o
 MLFLOW_TRACKING_URL = os.getenv("MLFLOW_TRACKING_URL", "").rstrip("/")
 MLFLOW_EXPERIMENT_NAME = os.getenv("MLFLOW_EXPERIMENT_NAME", "Astrixa Gateway")
 DEFAULT_ANONYMIZATION_MODE = os.getenv("ASTRIXA_DEFAULT_ANONYMIZATION_MODE", "on").lower()
+DEFAULT_ANONYMIZATION_PROFILE = os.getenv("ASTRIXA_DEFAULT_ANONYMIZATION_PROFILE", "pii-lite").lower()
 _MLFLOW_EXPERIMENT_ID: str | None = None
 
 REQUEST_COUNT = Counter(
@@ -73,6 +74,11 @@ ANONYMIZATION_MODE_COUNT = Counter(
     "astrixa_gateway_anonymization_mode_requests_total",
     "Gateway requests by applied anonymization mode",
     ["anonymization_mode"],
+)
+ANONYMIZATION_PROFILE_COUNT = Counter(
+    "astrixa_gateway_anonymization_profile_requests_total",
+    "Gateway requests by applied anonymization profile",
+    ["anonymization_profile"],
 )
 
 app = FastAPI(title="Astrixa API Gateway", version="1.0.0")
@@ -484,6 +490,17 @@ async def chat_completions(request: ChatCompletionRequest, raw_request: Request)
     request_payload["metadata"]["anonymization_mode"] = "off" if str(anonymization_mode).lower() == "off" else "on"
     ANONYMIZATION_MODE_COUNT.labels(anonymization_mode=request_payload["metadata"]["anonymization_mode"]).inc()
 
+    anonymization_profile = (
+        raw_request.headers.get("x-astrixa-anonymization-profile")
+        or auth_verdict.get("anonymization_profile")
+        or request_payload["metadata"].get("anonymization_profile")
+        or DEFAULT_ANONYMIZATION_PROFILE
+    )
+    request_payload["metadata"]["anonymization_profile"] = str(anonymization_profile).lower()
+    ANONYMIZATION_PROFILE_COUNT.labels(
+        anonymization_profile=request_payload["metadata"]["anonymization_profile"]
+    ).inc()
+
     for header_name, metadata_key in (
         ("x-astrixa-anonymization-include", "anonymization_entities_include"),
         ("x-astrixa-anonymization-exclude", "anonymization_entities_exclude"),
@@ -615,6 +632,7 @@ async def chat_completions(request: ChatCompletionRequest, raw_request: Request)
             "X-Astrixa-Anonymization-Applied": "true" if replacements else "false",
             "X-Astrixa-Anonymization-Decision": anonymization["decision"],
             "X-Astrixa-Anonymization-Mode": request_payload["metadata"]["anonymization_mode"],
+            "X-Astrixa-Anonymization-Profile": anonymization["anonymization_profile"],
             "X-Astrixa-Anonymization-Policy": anonymization["policy_version"],
             "X-Astrixa-Anonymization-Replacements": str(len(replacements)),
             "X-Astrixa-Policy-Profile": request_payload["metadata"]["policy_profile"],
@@ -690,6 +708,7 @@ async def chat_completions(request: ChatCompletionRequest, raw_request: Request)
                 "X-Astrixa-Anonymization-Applied": "true" if replacements else "false",
                 "X-Astrixa-Anonymization-Decision": anonymization["decision"],
                 "X-Astrixa-Anonymization-Mode": request_payload["metadata"]["anonymization_mode"],
+                "X-Astrixa-Anonymization-Profile": anonymization["anonymization_profile"],
                 "X-Astrixa-Anonymization-Policy": anonymization["policy_version"],
                 "X-Astrixa-Anonymization-Replacements": str(len(replacements)),
             },
@@ -729,6 +748,7 @@ async def chat_completions(request: ChatCompletionRequest, raw_request: Request)
             "X-Astrixa-Anonymization-Applied": "true" if replacements else "false",
             "X-Astrixa-Anonymization-Decision": anonymization["decision"],
             "X-Astrixa-Anonymization-Mode": request_payload["metadata"]["anonymization_mode"],
+            "X-Astrixa-Anonymization-Profile": anonymization["anonymization_profile"],
             "X-Astrixa-Anonymization-Policy": anonymization["policy_version"],
             "X-Astrixa-Anonymization-Replacements": str(len(replacements)),
             "X-Astrixa-Policy-Profile": request_payload["metadata"]["policy_profile"],

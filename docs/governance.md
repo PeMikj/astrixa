@@ -100,6 +100,7 @@ Governance rule:
 
 - sensitive request data should be masked locally before external LLM calls
 - anonymization control must remain independent from guardrail policy selection
+- anonymization profiles may define default masking and restoration behavior for different workflows
 - deterministic detectors must handle structured secrets and common PII
 - local NER models may enrich masking for names, organizations, and locations
 - raw-to-token mappings must stay request-scoped unless a stricter retention policy explicitly allows otherwise
